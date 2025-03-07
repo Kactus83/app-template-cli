@@ -1,6 +1,6 @@
 {
   "name": "app-boilerplate-cli",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "CLI pour gérer votre projet Nest/Angular",
   "main": "dist/cli.js",
   "bin": {
@@ -14,25 +14,28 @@
   },
   "keywords": [
     "cli",
-    "project",
-    "build",
-    "clean",
-    "utilities"
+    "project"
   ],
   "author": "Votre Nom",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "axios": "^1.8.2",
+    "chalk": "^5.4.1",
     "child_process": "^1.0.2",
     "commander": "^13.1.0",
     "fs": "^0.0.1-security",
     "fs-extra": "^11.3.0",
-    "path": "^0.12.7"
+    "path": "^0.12.7",
+    "prompts": "^2.4.2"
   },
   "devDependencies": {
+    "@types/axios": "^0.9.36",
+    "@types/chalk": "^0.4.31",
     "@types/commander": "^2.12.0",
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^22.13.9",
+    "@types/prompts": "^2.4.9",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.2"
   }
