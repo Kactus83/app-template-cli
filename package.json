@@ -1,6 +1,6 @@
 {
   "name": "app-boilerplate-cli",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "CLI pour gérer votre projet Nest/Angular",
   "main": "dist/cli.js",
   "bin": {
