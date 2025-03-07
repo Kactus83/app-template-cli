@@ -2,6 +2,7 @@ import * as fs from 'fs-extra';
 import { execSync } from 'child_process';
 import * as path from 'path';
 import prompts from 'prompts';
+import { CliConfig } from '../config/cli-config';
 
 /**
  * URL du dépôt contenant le template de projet.
@@ -196,11 +197,14 @@ export async function createCommand(): Promise<void> {
     // Suppression du dossier .git cloné pour détacher l'historique du template
     await fs.remove(path.join(targetDir, '.git'));
 
-    // Création du fichier de configuration personnalisé
-    const configContent = { projectName };
-    await fs.writeFile(configPath, JSON.stringify(configContent, null, 2));
+    
+    // Importer la configuration par défaut et mettre à jour le nom du projet
+    import('../config/cli-config').then(({ defaultCliConfig }) => {
+      const configContent: CliConfig = { ...defaultCliConfig, projectName };
+      fs.writeFile(configPath, JSON.stringify(configContent, null, 2));
 
     console.log(`✅ Le projet "${projectName}" a été créé avec succès dans ${targetDir} !`);
+    });
 
     // Gestion du dépôt Git
     await handleGitRepository(targetDir, projectName);
