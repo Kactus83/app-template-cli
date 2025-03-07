@@ -10,7 +10,6 @@
     "build": "tsc",
     "prepare": "npm run build",
     "start": "node dist/cli.js",
-    "update-cli": "ts-node scripts/update-cli.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
