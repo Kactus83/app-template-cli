@@ -3,13 +3,14 @@
 // Permet d'exécuter ce fichier sans préciser "node" dans le terminal.
 
 import { Command } from 'commander';
-import { createCommand } from './commands/create';
-import { configCommand } from './commands/config';
-import { buildCommand } from './commands/build';
-import { cleanCommand } from './commands/clean';
-import { monitorCommand } from './commands/monitor';
-import { helpersCommand } from './commands/helpers';
-import { doctorCommand } from './commands/doctor';
+import { createCommand } from './commands/create.js';
+import { configCommand } from './commands/config.js';
+import { buildCommand } from './commands/build.js';
+import { cleanCommand } from './commands/clean.js';
+import { monitorCommand } from './commands/monitor.js';
+import { helpersCommand } from './commands/helpers.js';
+import { doctorCommand } from './commands/doctor.js';
+
 
 const program = new Command();
 

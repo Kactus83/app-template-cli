@@ -1,7 +1,8 @@
-import * as fs from 'fs-extra';
+import pkg from 'fs-extra';
+const { readFile, existsSync, writeFile } = pkg;
 import * as path from 'path';
 import prompts from 'prompts';
-import { CliConfig } from '../config/cli-config';
+import { CliConfig } from '../config/cli-config.js';
 
 /**
  * Commande "config" interactive qui affiche et permet d'éditer la configuration du projet ligne par ligne.
@@ -15,14 +16,14 @@ export async function configCommand(): Promise<void> {
   const configFileName = '.app-template';
   const configPath = path.resolve(process.cwd(), configFileName);
 
-  if (!fs.existsSync(configPath)) {
+  if (!existsSync(configPath)) {
     console.error(`Aucun fichier de configuration "${configFileName}" trouvé. Veuillez d'abord exécuter "appwizard create".`);
     return;
   }
 
   let config: CliConfig;
   try {
-    const configContent = await fs.readFile(configPath, 'utf8');
+    const configContent = await readFile(configPath, 'utf8');
     config = JSON.parse(configContent) as CliConfig;
   } catch (error) {
     console.error("Erreur lors de la lecture de la configuration :", error);
@@ -100,7 +101,7 @@ export async function configCommand(): Promise<void> {
 
   if (confirm.ok) {
     try {
-      await fs.writeFile(configPath, JSON.stringify(config, null, 2));
+      await writeFile(configPath, JSON.stringify(config, null, 2));
       console.log("✅ Configuration mise à jour avec succès.");
     } catch (error) {
       console.error("Erreur lors de l'écriture de la configuration :", error);

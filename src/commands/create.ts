@@ -1,8 +1,10 @@
-import * as fs from 'fs-extra';
+import pkg from 'fs-extra';
+const { readdir, remove, pathExists, mkdir, writeFile } = pkg;
+// Glitch pôur rendre compatible
 import { execSync } from 'child_process';
 import * as path from 'path';
 import prompts from 'prompts';
-import { CliConfig } from '../config/cli-config';
+import { CliConfig } from '../config/cli-config.js';
 
 /**
  * URL du dépôt contenant le template de projet.
@@ -21,10 +23,10 @@ const ALLOWED_FILES = ['.git', '.vscode', '.DS_Store'];
  * @param targetDir - Chemin absolu du répertoire à nettoyer.
  */
 async function cleanTargetDirectory(targetDir: string): Promise<void> {
-  const entries = await fs.readdir(targetDir);
+  const entries = await readdir(targetDir);
   for (const entry of entries) {
     if (!ALLOWED_FILES.includes(entry)) {
-      await fs.remove(path.join(targetDir, entry));
+      await remove(path.join(targetDir, entry));
     }
   }
 }
@@ -36,7 +38,7 @@ async function cleanTargetDirectory(targetDir: string): Promise<void> {
  * @returns true si le répertoire est considéré "vide" (seulement éléments autorisés), false sinon.
  */
 async function isDirectoryEmpty(targetDir: string): Promise<boolean> {
-  const entries = await fs.readdir(targetDir);
+  const entries = await readdir(targetDir);
   const filtered = entries.filter(entry => !ALLOWED_FILES.includes(entry));
   return filtered.length === 0;
 }
@@ -91,11 +93,11 @@ async function chooseTargetDirectory(currentDir: string): Promise<string> {
       process.exit(1);
     }
     const newFolderPath = path.join(currentDir, responseFolder.folderName.trim());
-    if (await fs.pathExists(newFolderPath)) {
+    if (await pathExists(newFolderPath)) {
       console.log(`❌ Le dossier ${newFolderPath} existe déjà.`);
       process.exit(1);
     }
-    await fs.mkdir(newFolderPath);
+    await mkdir(newFolderPath);
     return newFolderPath;
   }
 }
@@ -109,7 +111,7 @@ async function chooseTargetDirectory(currentDir: string): Promise<string> {
  */
 async function handleGitRepository(targetDir: string, projectName: string): Promise<void> {
   const gitDir = path.join(targetDir, '.git');
-  if (await fs.pathExists(gitDir)) {
+  if (await pathExists(gitDir)) {
     const response = await prompts({
       type: 'confirm',
       name: 'commit',
@@ -185,7 +187,7 @@ export async function createCommand(): Promise<void> {
   const configPath = path.join(targetDir, configFileName);
 
   // Si un fichier de configuration existe déjà, on arrête
-  if (await fs.pathExists(configPath)) {
+  if (await pathExists(configPath)) {
     console.log(`⚠️  Un projet existe déjà dans ce dossier (fichier "${configFileName}" détecté).`);
     return;
   }
@@ -195,13 +197,13 @@ export async function createCommand(): Promise<void> {
   try {
     execSync(`git clone --depth=1 ${TEMPLATE_REPO} "${targetDir}"`, { stdio: 'inherit' });
     // Suppression du dossier .git cloné pour détacher l'historique du template
-    await fs.remove(path.join(targetDir, '.git'));
+    await remove(path.join(targetDir, '.git'));
 
     
     // Importer la configuration par défaut et mettre à jour le nom du projet
-    import('../config/cli-config').then(({ defaultCliConfig }) => {
+    import('../config/cli-config.js').then(({ defaultCliConfig }) => {
       const configContent: CliConfig = { ...defaultCliConfig, projectName };
-      fs.writeFile(configPath, JSON.stringify(configContent, null, 2));
+      writeFile(configPath, JSON.stringify(configContent, null, 2));
 
     console.log(`✅ Le projet "${projectName}" a été créé avec succès dans ${targetDir} !`);
     });

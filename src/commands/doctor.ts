@@ -2,7 +2,7 @@ import { execSync } from 'child_process';
 import axios from 'axios';
 import chalk from 'chalk';
 import prompts from 'prompts';
-import { checkInternet, checkGit, checkRepo, checkDocker, checkDockerCompose } from './helpers';
+import { checkInternet, checkGit, checkRepo, checkDocker, checkDockerCompose } from './helpers.js';
 
 /**
  * Commande "doctor" qui exécute un diagnostic complet en vérifiant les prérequis,
