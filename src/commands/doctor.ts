@@ -1,105 +1,91 @@
 import { execSync } from 'child_process';
-import axios from 'axios';
 import chalk from 'chalk';
+import prompts from 'prompts';
+import { checkInternet, checkGit, checkRepo, checkDocker, checkDockerCompose } from './helpers';
 
 /**
- * Vérifie les prérequis techniques nécessaires au bon fonctionnement du projet.
+ * Tente d'appliquer un correctif automatique pour Docker.
  *
- * @remarks
- * Cette commande teste dans l’ordre :
- * - Connexion internet
- * - Installation et disponibilité de Git
- * - Accessibilité du dépôt GitHub du template
- * - Disponibilité de Docker
- * - Disponibilité de Docker Compose
+ * @returns boolean True si le correctif a été appliqué avec succès, sinon false.
+ */
+function fixDocker(): boolean {
+  try {
+    console.log(chalk.blue('Tentative de correction automatique pour Docker...'));
+    // Exemple de correctif automatique : exécuter un "docker system prune"
+    execSync('docker system prune --all --force', { stdio: 'inherit' });
+    return true;
+  } catch (error) {
+    console.error(chalk.red('❌ Échec du correctif automatique pour Docker.'));
+    return false;
+  }
+}
+
+/**
+ * Commande "doctor" qui exécute un diagnostic complet en utilisant les fonctions de test,
+ * tente d'appliquer des correctifs automatiques pour certains problèmes, et retourne un compte rendu final.
  *
- * En cas d’échec, elle fournit des indications précises pour résoudre les problèmes détectés.
- *
- * @author Kactus83
+ * @returns Promise<void> Une fois le diagnostic et les éventuels correctifs terminés.
  */
 export async function doctorCommand(): Promise<void> {
-  console.log(chalk.blue('🩺 Vérification des prérequis en cours...\n'));
-
-  const results = {
-    internet: false,
-    git: false,
-    repo: false,
-    docker: false,
-    dockerCompose: false,
-  };
-
-  // Test de la connexion internet
-  try {
-    await axios.get('https://google.com', { timeout: 5000 });
-    results.internet = true;
-    console.log(chalk.green('✅ Connexion internet fonctionnelle'));
-  } catch {
-    console.log(chalk.red('❌ Impossible de se connecter à internet'));
+  console.clear();
+  console.log(chalk.blue('🩺 Exécution du diagnostic avancé...\n'));
+  
+  const internet = await checkInternet();
+  const git = checkGit();
+  const repo = await checkRepo();
+  const docker = checkDocker();
+  const dockerCompose = checkDockerCompose();
+  
+  let correctionsApplied = false;
+  
+  if (!internet) {
+    console.log(chalk.red('❌ Connexion Internet défaillante. Aucun correctif automatique disponible.'));
   }
-
-  // Vérification de l’installation de Git
-  try {
-    execSync('git --version', { stdio: 'ignore' });
-    results.git = true;
-    console.log(chalk.green('✅ Git est installé et disponible'));
-  } catch {
-    console.log(chalk.red('❌ Git n’est pas installé ou introuvable'));
+  if (!git) {
+    console.log(chalk.red('❌ Git n\'est pas installé. Veuillez l\'installer manuellement.'));
   }
-
-  // Vérification de l’accès au dépôt GitHub
-  try {
-    await axios.get('https://github.com/Kactus83/app-template', { timeout: 5000 });
-    results.repo = true;
-    console.log(chalk.green('✅ Accès au dépôt GitHub validé'));
-  } catch {
-    console.log(chalk.red('❌ Impossible d’accéder au dépôt GitHub "app-template"'));
+  if (!repo) {
+    console.log(chalk.red('❌ Accès au dépôt GitHub "app-template" impossible.'));
   }
-
-  // Vérification de l’installation de Docker
-  try {
-    execSync('docker --version', { stdio: 'ignore' });
-    results.docker = true;
-    console.log(chalk.green('✅ Docker est installé et disponible'));
-  } catch {
-    console.log(chalk.red('❌ Docker n’est pas installé ou introuvable'));
+  if (!docker) {
+    console.log(chalk.red('❌ Docker n\'est pas disponible.'));
+    const res = await prompts({
+      type: 'confirm',
+      name: 'fix',
+      message: 'Voulez-vous tenter un correctif automatique pour Docker ?',
+      initial: false,
+    });
+    if (res.fix) {
+      if (fixDocker()) {
+        console.log(chalk.green('✅ Correctif pour Docker appliqué.'));
+        correctionsApplied = true;
+      }
+    }
   }
-
-  // Vérification de Docker Compose
-  try {
-    execSync('docker-compose --version', { stdio: 'ignore' });
-    results.dockerCompose = true;
-    console.log(chalk.green('✅ Docker Compose est installé et disponible'));
-  } catch {
-    console.log(chalk.red('❌ Docker Compose n’est pas installé ou introuvable'));
+  if (!dockerCompose) {
+    console.log(chalk.red('❌ Docker Compose n\'est pas installé. Veuillez l\'installer.'));
   }
-
-  // Rapport final clair et précis
-  console.log('\n', chalk.bold.blue('📋 Rapport de vérification :'));
-  Object.entries(results).forEach(([key, value]) => {
-    console.log(`- ${key} : ${value ? chalk.green('OK') : chalk.red('ÉCHEC')}`);
-  });
-
-  // Conseils précis en cas d’échec
-  if (!results.internet) {
-    console.log(chalk.yellow('\n➡️ Vérifiez votre connexion internet et votre pare-feu.'));
-  }
-  if (!results.git) {
-    console.log(chalk.yellow('\n➡️ Installez Git : https://git-scm.com/downloads'));
-  }
-  if (!results.repo) {
-    console.log(chalk.yellow('\n➡️ Vérifiez votre accès à GitHub ou l’URL du dépôt.'));
-  }
-  if (!results.docker) {
-    console.log(chalk.yellow('\n➡️ Installez Docker : https://docs.docker.com/get-docker/'));
-  }
-  if (!results.dockerCompose) {
-    console.log(chalk.yellow('\n➡️ Installez Docker Compose : https://docs.docker.com/compose/install/'));
-  }
-
-  // Message de succès global
-  if (Object.values(results).every(Boolean)) {
-    console.log(chalk.bold.green('\n🎉 Tout est opérationnel ! Vous êtes prêt à lancer votre projet !'));
+  
+  // Affichage du compte rendu final
+  console.log('\n', chalk.bold.blue('📋 Compte rendu du diagnostic :'));
+  console.log(`Connexion Internet : ${internet ? chalk.green('OK') : chalk.red('ÉCHEC')}`);
+  console.log(`Git                : ${git ? chalk.green('OK') : chalk.red('ÉCHEC')}`);
+  console.log(`Dépôt GitHub       : ${repo ? chalk.green('OK') : chalk.red('ÉCHEC')}`);
+  console.log(`Docker             : ${docker ? chalk.green('OK') : chalk.red('ÉCHEC')}`);
+  console.log(`Docker Compose     : ${dockerCompose ? chalk.green('OK') : chalk.red('ÉCHEC')}`);
+  
+  if (internet && git && repo && docker && dockerCompose) {
+    console.log(chalk.bold.green('\n🎉 Diagnostic avancé : Tous les prérequis sont satisfaits.'));
   } else {
-    console.log(chalk.bold.red('\n❗ Veuillez corriger les erreurs ci-dessus avant de continuer.'));
+    console.log(chalk.bold.red('\n❗ Diagnostic avancé : Certains prérequis ne sont pas satisfaits.'));
+    if (correctionsApplied) {
+      console.log(chalk.green('\n✅ Des correctifs ont été appliqués automatiquement. Veuillez vérifier votre environnement.'));
+    }
   }
+  
+  await prompts({
+    type: 'text',
+    name: 'pause',
+    message: 'Appuyez sur Entrée pour continuer...',
+  });
 }
