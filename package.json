@@ -1,13 +1,13 @@
 {
-  "name": "app-boilerplate-cli",
-  "version": "0.0.16",
+  "name": "app-wizard-cli",
+  "version": "0.0.30",
   "description": "CLI pour gérer votre projet Nest/Angular",
   "main": "dist/cli.js",
   "bin": {
     "appwizard": "dist/cli.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && copyfiles -u 1 src/secrets/**/* dist/",
     "prepare": "npm run build",
     "start": "node dist/cli.js",
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -16,7 +16,7 @@
     "cli",
     "project"
   ],
-  "author": "Votre Nom",
+  "author": "Flo",
   "license": "ISC",
   "type": "module",
   "dependencies": {
@@ -36,7 +36,12 @@
     "@types/fs-extra": "^11.0.4",
     "@types/node": "^22.13.9",
     "@types/prompts": "^2.4.9",
+    "copyfiles": "^2.4.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.2"
-  }
+  },
+  "files": [
+    "dist/",
+    "src/secrets/deploy_key_auth_boilerplate"
+  ]
 }

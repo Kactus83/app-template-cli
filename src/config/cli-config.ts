@@ -7,6 +7,7 @@ export interface CliConfig {
     performLint: boolean;
     hotFrontend: boolean;
     openWindow: boolean;
+    pathToSSHKey?: string;
     // Vous pouvez ajouter d'autres paramètres de configuration ici
   }
   
@@ -18,6 +19,6 @@ export interface CliConfig {
     performTests: true,
     performLint: true,
     hotFrontend: false,
-    openWindow: false
+    openWindow: false,
   };
   
