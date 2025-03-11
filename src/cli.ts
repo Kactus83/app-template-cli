@@ -10,7 +10,7 @@ import { cleanCommand } from './commands/clean.js';
 import { monitorCommand } from './commands/monitor.js';
 import { helpersCommand } from './commands/helpers.js';
 import { doctorCommand } from './commands/doctor.js';
-import { removeCredentials } from './commands/remove-credentials.js';
+import { credentialsCommand } from './commands/credentials.js';
 
 
 const program = new Command();
@@ -64,9 +64,9 @@ program
 
 // Commande "remove credentials"
 program
-  .command('remove-credentials')
-  .description('🔑 Supprime les credentials utilisateur enregistrés.')
-  .action(removeCredentials)
+  .command('credentials')
+  .description('🔑 Utilitaire pour les credentials utilisateur.')
+  .action(credentialsCommand);
 
 // Personnalisation du message d'aide général
 program.configureHelp({

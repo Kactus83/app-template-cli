@@ -1,23 +1,24 @@
 import fs from 'fs-extra';
 import * as path from 'path';
 import prompts from 'prompts';
-import { execSync } from 'child_process';
 import { CliConfig } from '../config/cli-config.js';
 import { TemplateService, Template, Credential } from '../services/template-service.js';
+import { GitService } from '../services/git-service.js';
 
 // Pour ESM, définir __dirname
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
 
 /**
- * Liste des fichiers/dossiers à exclure lors du test de "non-viduité" du répertoire.
+ * Liste des fichiers/dossiers à conserver lors du nettoyage du répertoire.
+ * On conserve .git, .vscode et .DS_Store afin de ne pas supprimer un dépôt Git existant (sauf si l'utilisateur choisit explicitement de le remplacer).
  */
 const ALLOWED_FILES = ['.git', '.vscode', '.DS_Store'];
 
 /**
- * Nettoie le répertoire cible en supprimant tous les fichiers et dossiers
- * qui ne figurent pas dans la liste des éléments autorisés.
+ * Nettoie le répertoire cible en supprimant tous les fichiers et dossiers ne figurant pas dans ALLOWED_FILES.
  *
  * @param targetDir - Chemin absolu du répertoire à nettoyer.
+ * @returns {Promise<void>}
  */
 async function cleanTargetDirectory(targetDir: string): Promise<void> {
   const entries = await fs.readdir(targetDir);
@@ -29,59 +30,53 @@ async function cleanTargetDirectory(targetDir: string): Promise<void> {
 }
 
 /**
- * Vérifie si le répertoire cible contient des fichiers/dossiers autres que les éléments autorisés.
- *
- * @param targetDir - Chemin absolu du répertoire à vérifier.
- * @returns true si le répertoire est considéré "vide", false sinon.
- */
-async function isDirectoryEmpty(targetDir: string): Promise<boolean> {
-  const entries = await fs.readdir(targetDir);
-  const filtered = entries.filter(entry => !ALLOWED_FILES.includes(entry));
-  return filtered.length === 0;
-}
-
-/**
  * Propose à l'utilisateur d'utiliser le dossier courant ou de créer un sous-dossier pour le projet.
+ * Si le dossier courant est utilisé, les fichiers non essentiels seront supprimés, mais le dépôt Git existant sera conservé
+ * si l'utilisateur ne choisit pas de le supprimer.
  *
  * @param currentDir - Chemin absolu du répertoire courant.
- * @returns Chemin absolu du répertoire cible.
+ * @returns {Promise<string>} Le chemin absolu du répertoire cible.
  */
 async function chooseTargetDirectory(currentDir: string): Promise<string> {
-  if (await isDirectoryEmpty(currentDir)) {
-    return currentDir;
-  }
-  
   const response = await prompts({
     type: 'select',
-    name: 'choice',
-    message: 'Le répertoire courant contient déjà des fichiers. Que souhaitez-vous faire ?',
+    name: 'folderOption',
+    message:
+      'Voulez-vous utiliser le dossier courant ou créer un sous-dossier pour votre projet ?\n' +
+      '(Si vous utilisez le dossier courant, tous les fichiers non essentiels seront supprimés.)',
     choices: [
-      { title: `Utiliser le dossier courant (${path.basename(currentDir)}) et le nettoyer (sauf ${ALLOWED_FILES.join(', ')})`, value: 'useCurrent' },
-      { title: 'Créer un sous-dossier pour le nouveau projet', value: 'createSubfolder' }
-    ]
+      { title: 'Utiliser le dossier courant', value: 'current' },
+      { title: 'Créer un sous-dossier', value: 'subfolder' },
+    ],
+    initial: 0,
   });
 
-  if (response.choice === 'useCurrent') {
-    console.log(`\n⚠️  Le dossier courant (${currentDir}) sera nettoyé (sauf ${ALLOWED_FILES.join(', ')}) !`);
-    const confirm = await prompts({
-      type: 'confirm',
-      name: 'ok',
-      message: 'Confirmez-vous cette opération ?',
-      initial: false,
-    });
-    if (confirm.ok) {
-      await cleanTargetDirectory(currentDir);
-      return currentDir;
-    } else {
-      console.log('Opération annulée. Veuillez relancer la commande.');
-      process.exit(0);
+  if (response.folderOption === 'current') {
+    console.log(`\n⚠️  Attention : Le dossier courant (${currentDir}) sera nettoyé (hors ${ALLOWED_FILES.join(', ')}) !`);
+    // Si un dépôt Git est présent, proposer de le supprimer afin d'éviter les conflits lors de la copie.
+    const gitPath = path.join(currentDir, '.git');
+    if (await fs.pathExists(gitPath)) {
+      const responseGit = await prompts({
+        type: 'confirm',
+        name: 'replaceGit',
+        message: 'Un dépôt Git est présent dans ce dossier. Voulez-vous le supprimer pour cloner le template ?',
+        initial: true,
+      });
+      if (responseGit.replaceGit) {
+        await fs.remove(gitPath);
+        console.log('🗑️  Le dépôt Git existant a été supprimé.');
+      } else {
+        console.log('👍 Le dépôt Git existant sera conservé.');
+      }
     }
+    await cleanTargetDirectory(currentDir);
+    return currentDir;
   } else {
     const responseFolder = await prompts({
       type: 'text',
       name: 'folderName',
-      message: 'Entrez le nom du nouveau dossier à créer pour le projet :',
-      initial: 'mon-projet'
+      message: 'Entrez le nom du sous-dossier à créer pour votre projet :',
+      initial: 'mon-projet',
     });
     if (!responseFolder.folderName.trim()) {
       console.log('❌ Le nom du dossier ne peut pas être vide.');
@@ -98,65 +93,26 @@ async function chooseTargetDirectory(currentDir: string): Promise<string> {
 }
 
 /**
- * Gère l'initialisation ou le commit du dépôt Git dans le répertoire cible.
- *
- * @param targetDir - Chemin absolu du répertoire cible.
- * @param projectName - Nom du projet.
- */
-async function handleGitRepository(targetDir: string, projectName: string): Promise<void> {
-  const gitDir = path.join(targetDir, '.git');
-  if (await fs.pathExists(gitDir)) {
-    const response = await prompts({
-      type: 'confirm',
-      name: 'commit',
-      message: 'Un dépôt Git a été détecté dans ce dossier. Voulez-vous committer la création du projet automatiquement ?',
-      initial: false
-    });
-    if (response.commit) {
-      try {
-        execSync('git add .', { cwd: targetDir, stdio: 'inherit' });
-        execSync(`git commit -m "Création du projet ${projectName}"`, { cwd: targetDir, stdio: 'inherit' });
-        console.log('✅ Commit effectué.');
-      } catch (error) {
-        console.log('❌ Erreur lors du commit. Veuillez effectuer le commit manuellement.');
-      }
-    }
-  } else {
-    const response = await prompts({
-      type: 'confirm',
-      name: 'init',
-      message: 'Aucun dépôt Git n\'a été détecté. Voulez-vous initialiser un dépôt Git dans ce dossier ?',
-      initial: true
-    });
-    if (response.init) {
-      try {
-        execSync('git init', { cwd: targetDir, stdio: 'inherit' });
-        execSync('git add .', { cwd: targetDir, stdio: 'inherit' });
-        execSync(`git commit -m "Initialisation du projet ${projectName}"`, { cwd: targetDir, stdio: 'inherit' });
-        console.log('✅ Dépôt Git initialisé et commit effectué.');
-      } catch (error) {
-        console.log('❌ Erreur lors de l\'initialisation du dépôt Git. Veuillez l\'initialiser manuellement.');
-      }
-    }
-  }
-}
-
-/**
  * Commande "create" permettant de créer un nouveau projet à partir du template officiel.
  *
- * Cette commande effectue les étapes suivantes :
- * - Détermine le répertoire cible à utiliser.
- * - Demande à l'utilisateur de saisir le nom du projet.
- * - Demande à l'utilisateur son nom d'utilisateur et son mot de passe.
- *   (Ces informations seront enregistrées, mais pour le clonage, la clé privée par défaut incluse est toujours utilisée.)
- * - Récupère la liste des templates disponibles via le credential et propose un choix.
- * - Clone le template sélectionné dans le répertoire cible via TemplateService.
- * - Crée le fichier de configuration `.app-template` contenant le nom du projet.
- * - Gère l'initialisation ou le commit dans le dépôt Git si nécessaire.
+ * Le processus effectue les étapes suivantes :
+ * - Détermine le répertoire cible (dossier courant ou sous-dossier).
+ * - Demande le nom du projet.
+ * - Demande les credentials utilisateur (nom d'utilisateur et mot de passe) qui sont enregistrés,
+ *   bien que pour le clonage, la clé privée par défaut incluse dans le package soit utilisée.
+ * - Propose le choix du template.
+ * - Clone le template dans un dossier temporaire, puis copie son contenu dans le dossier cible.
+ * - Écrit un fichier de configuration.
+ * - Gère le dépôt Git via GitService (initialisation ou commit).
  *
- * @returns Promise<void> Une fois l'opération terminée.
+ * @returns {Promise<void>}
  */
 export async function createCommand(): Promise<void> {
+  if (!GitService.isGitInstalled()) {
+    console.log('❌ Git n\'est pas installé sur votre machine. Veuillez l\'installer avant de continuer.');
+    process.exit(1);
+  }
+
   const currentDir = process.cwd();
   const targetDir = await chooseTargetDirectory(currentDir);
 
@@ -168,7 +124,6 @@ export async function createCommand(): Promise<void> {
     initial: defaultProjectName,
     validate: (name: string) => name.trim() === '' ? 'Le nom du projet ne peut pas être vide.' : true,
   });
-
   if (!responseProject.projectName) {
     console.log('❌ Opération annulée par l\'utilisateur.');
     return;
@@ -177,13 +132,12 @@ export async function createCommand(): Promise<void> {
 
   const configFileName = '.app-template';
   const configPath = path.join(targetDir, configFileName);
-
   if (await fs.pathExists(configPath)) {
     console.log(`⚠️  Un projet existe déjà dans ce dossier (fichier "${configFileName}" détecté).`);
     return;
   }
 
-  // Demande des credentials utilisateur
+  // Gestion des credentials utilisateur
   let credential: Credential | undefined = await TemplateService.getCredential();
   if (!credential) {
     console.log('Aucun credential utilisateur n\'est enregistré.');
@@ -192,13 +146,13 @@ export async function createCommand(): Promise<void> {
         type: 'text',
         name: 'username',
         message: 'Entrez votre nom d\'utilisateur :',
-        initial: 'test-user'
+        initial: 'test-user',
       },
       {
         type: 'password',
         name: 'password',
-        message: 'Entrez votre mot de passe :'
-      }
+        message: 'Entrez votre mot de passe :',
+      },
     ]);
     credential = { username: responseCred.username, password: responseCred.password };
     console.log('⚠️  Avertissement : Les credentials saisis seront enregistrés, mais le clonage utilisera la clé privée par défaut incluse dans le package.');
@@ -216,13 +170,12 @@ export async function createCommand(): Promise<void> {
     })),
     initial: 0,
   });
-
   const chosenTemplate: Template = responseTemplate.templateChoice;
 
   console.log(`📥 Clonage du template "${chosenTemplate.name}" dans ${targetDir}...`);
   try {
     await TemplateService.fetchTemplate(targetDir, chosenTemplate.url, credential);
-    
+
     import('../config/cli-config.js').then(({ defaultCliConfig }) => {
       const configContent: CliConfig = { ...defaultCliConfig, projectName };
       fs.writeFile(configPath, JSON.stringify(configContent, null, 2))
@@ -230,7 +183,7 @@ export async function createCommand(): Promise<void> {
         .catch(err => console.error('❌ Erreur lors de la création du fichier de configuration :', err));
     });
 
-    await handleGitRepository(targetDir, projectName);
+    await GitService.handleRepository(targetDir, projectName);
   } catch (error) {
     console.error('❌ Une erreur est survenue durant la création du projet :', error);
   }

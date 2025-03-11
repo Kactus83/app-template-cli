@@ -4,24 +4,22 @@ import * as path from 'path';
 import os from 'os';
 
 /**
- * Fonction utilitaire qui retourne le chemin absolu par défaut vers le fichier de clé privée.
- * Elle s'assure de retirer tout caractère indésirable au début du chemin (comme un slash ou backslash)
- * pour qu'il soit utilisable sur toutes les plateformes.
+ * Retourne le chemin absolu par défaut vers la clé privée incluse dans le package.
+ * Le chemin est nettoyé pour retirer tout caractère indésirable (par exemple, un slash initial sur Windows).
  *
- * @returns Le chemin absolu vers la clé privée par défaut.
+ * @returns {string} Le chemin absolu vers la clé privée par défaut.
  */
 function getDefaultKeyPath(): string {
-  // Calculer le chemin à partir du module actuel (dans dist/)
   let p = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'secrets', 'deploy_key_auth_boilerplate');
-  // Sur Windows, new URL(import.meta.url).pathname peut commencer par un slash ou backslash. On le retire.
   p = p.replace(/^[/\\]+/, '');
   return p;
 }
 
 /**
- * Interface représentant un credential utilisateur.
+ * Interface représentant les informations de connexion utilisateur.
  *
- * Ici, on demande un nom d'utilisateur et un mot de passe.
+ * @property {string} username - Le nom d'utilisateur.
+ * @property {string} password - Le mot de passe.
  */
 export interface Credential {
   username: string;
@@ -30,6 +28,9 @@ export interface Credential {
 
 /**
  * Interface représentant un template.
+ *
+ * @property {string} name - Le nom du template.
+ * @property {string} url - L'URL SSH du dépôt Git du template.
  */
 export interface Template {
   name: string;
@@ -39,39 +40,32 @@ export interface Template {
 /**
  * Service de gestion des templates.
  *
- * Ce service gère :
- * - Le clonage d’un template depuis un dépôt Git privé via une deploy key.
- * - L’enregistrement et la récupération du credential utilisateur.
- * - La récupération (fictive) de la liste des templates disponibles.
+ * Ce service assure :
+ * - Le clonage d’un template depuis un dépôt Git privé via la clé privée par défaut incluse dans le package.
+ * - L’enregistrement et la récupération des credentials utilisateur.
+ * - La fourniture (fictive) d’une liste de templates disponibles.
  *
- * Pour le clonage, l'authentification s'effectue toujours via la clé privée par défaut
- * incluse dans le package, quelle que soient les valeurs saisies par l'utilisateur.
+ * Pour le clonage, le service utilise toujours la clé privée par défaut, quelle que soient les valeurs saisies par l'utilisateur.
  */
 export class TemplateService {
-  /**
-   * Le template par défaut.
-   */
+  /** Le template par défaut utilisé actuellement. */
   public static DEFAULT_TEMPLATE: Template = {
     name: 'default',
     url: 'git@github.com:Kactus83/app-template.git',
   };
 
-  /**
-   * Chemin vers le fichier de credential dans le dossier de l'utilisateur.
-   *
-   * Le credential est stocké dans le répertoire personnel dans un fichier caché.
-   */
+  /** Chemin vers le fichier de credentials utilisateur (stocké dans le dossier personnel). */
   private static CREDENTIAL_FILE: string = path.join(os.homedir(), '.appwizard-credentials.json');
 
-  /**
-   * Chemin par défaut vers la clé privée incluse dans le package.
-   */
-  private static DEFAULT_KEY_PATH: string = getDefaultKeyPath();
+  /** Chemin par défaut vers la clé privée incluse dans le package. */
+  public static DEFAULT_KEY_PATH: string = getDefaultKeyPath();
 
   /**
-   * Enregistre le credential utilisateur dans le fichier de configuration.
+   * Enregistre les credentials utilisateur dans le fichier de configuration.
    *
-   * @param credential - Le credential à enregistrer.
+   * @param credential - Les credentials à enregistrer.
+   * @returns {Promise<void>}
+   * @throws Une erreur en cas d'échec d'écriture.
    */
   public static async saveCredential(credential: Credential): Promise<void> {
     try {
@@ -84,9 +78,9 @@ export class TemplateService {
   }
 
   /**
-   * Récupère le credential utilisateur enregistré.
+   * Récupère les credentials utilisateur enregistrés.
    *
-   * @returns Le credential (de type Credential) ou undefined s'il n'est pas trouvé.
+   * @returns {Promise<Credential | undefined>} Les credentials ou undefined s'ils n'existent pas.
    */
   public static async getCredential(): Promise<Credential | undefined> {
     if (await fs.pathExists(TemplateService.CREDENTIAL_FILE)) {
@@ -105,25 +99,24 @@ export class TemplateService {
   /**
    * Renvoie la liste des templates disponibles.
    *
-   * Pour cette version, elle renvoie uniquement le template par défaut.
+   * Pour cette version, seul le template par défaut est renvoyé.
    *
-   * @param _credential - Le credential utilisateur (non utilisé ici, mais prévu pour évoluer).
-   * @returns Un tableau de templates disponibles.
+   * @param _credential - Les credentials utilisateur (non utilisés ici, mais réservés pour une évolution future).
+   * @returns {Promise<Template[]>} Un tableau de templates.
    */
   public static async listTemplates(_credential: Credential): Promise<Template[]> {
     return [TemplateService.DEFAULT_TEMPLATE];
   }
 
   /**
-   * Clone le template depuis le dépôt Git dans le répertoire cible.
+   * Clone le template depuis le dépôt Git dans un dossier temporaire, puis copie les fichiers dans le dossier cible.
+   * L'authentification se fait via la clé privée par défaut incluse dans le package.
    *
-   * L'authentification s'effectue via la clé privée par défaut incluse dans le package,
-   * indépendamment des credentials utilisateur.
-   *
-   * @param targetDir - Chemin absolu du répertoire cible.
-   * @param repoUrl - URL du dépôt Git du template.
-   * @param _credential - Le credential utilisateur (non utilisé pour le clonage).
-   * @throws Une erreur si le clonage ou le nettoyage échoue.
+   * @param targetDir - Chemin absolu du répertoire cible où copier les fichiers.
+   * @param repoUrl - L'URL du dépôt Git du template.
+   * @param _credential - Les credentials utilisateur (non utilisés pour le clonage).
+   * @returns {Promise<void>}
+   * @throws Une erreur si le clonage ou la copie échoue.
    */
   public static async fetchTemplate(
     targetDir: string,
@@ -134,7 +127,7 @@ export class TemplateService {
     const fixedKeyPath = rawKeyPath.replace(/\\/g, '/');
     const quotedKeyPath = `"${fixedKeyPath}"`;
 
-    // Vérifier que le fichier de clé existe
+    // Vérifier que le fichier de clé privée existe
     if (!(await fs.pathExists(rawKeyPath))) {
       throw new Error(`Le fichier de clé privée par défaut n'existe pas au chemin: ${rawKeyPath}`);
     }
@@ -142,21 +135,28 @@ export class TemplateService {
     const gitSshCommand = `ssh -i ${quotedKeyPath} -o StrictHostKeyChecking=no`;
     const env = { ...process.env, GIT_SSH_COMMAND: gitSshCommand };
 
+    // Créer un dossier temporaire pour le clonage
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'appwizard-'));
     try {
-      console.log(`📥 Clonage du template depuis ${repoUrl} dans ${targetDir}...`);
-      execSync(`git clone --depth=1 ${repoUrl} "${targetDir}"`, { stdio: 'inherit', env });
-      console.log('✅ Clonage terminé avec succès.');
+      console.log(`📥 Clonage du template depuis ${repoUrl} dans le dossier temporaire ${tmpDir}...`);
+      execSync(`git clone --depth=1 ${repoUrl} "${tmpDir}"`, { stdio: 'inherit', env });
+      console.log('✅ Clonage dans le dossier temporaire terminé.');
 
-      const gitFolder = path.join(targetDir, '.git');
+      // Supprimer le dossier .git du clone temporaire
+      const gitFolder = path.join(tmpDir, '.git');
       if (await fs.pathExists(gitFolder)) {
-        console.log('🧹 Suppression du dossier .git du template cloné...');
         await fs.remove(gitFolder);
-        console.log('✅ Dossier .git supprimé.');
-      } else {
-        console.warn('⚠️ Aucun dossier .git trouvé dans le répertoire cible.');
       }
+
+      console.log(`📂 Copie des fichiers du dossier temporaire vers ${targetDir}...`);
+      // Copier tous les fichiers du dossier temporaire dans targetDir
+      await fs.copy(tmpDir, targetDir, { overwrite: true });
+      console.log('✅ Copie terminée.');
+
+      // Supprimer le dossier temporaire
+      await fs.remove(tmpDir);
     } catch (error) {
-      console.error('❌ Erreur lors du clonage du template :', error);
+      console.error('❌ Erreur lors du clonage ou de la copie du template :', error);
       throw new Error('Échec du clonage du template.');
     }
   }
