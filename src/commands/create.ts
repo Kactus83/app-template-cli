@@ -2,7 +2,7 @@ import fs from 'fs-extra';
 import * as path from 'path';
 import prompts from 'prompts';
 import { CliConfig } from '../config/cli-config.js';
-import { TemplateService, Template, Credential } from '../services/template-service.js';
+import { FetchTemplateService, Template, Credential } from '../services/fetch-template-service.js';
 import { GitService } from '../services/git-service.js';
 
 // Pour ESM, définir __dirname
@@ -138,7 +138,7 @@ export async function createCommand(): Promise<void> {
   }
 
   // Gestion des credentials utilisateur
-  let credential: Credential | undefined = await TemplateService.getCredential();
+  let credential: Credential | undefined = await FetchTemplateService.getCredential();
   if (!credential) {
     console.log('Aucun credential utilisateur n\'est enregistré.');
     const responseCred = await prompts([
@@ -156,10 +156,10 @@ export async function createCommand(): Promise<void> {
     ]);
     credential = { username: responseCred.username, password: responseCred.password };
     console.log('⚠️  Avertissement : Les credentials saisis seront enregistrés, mais le clonage utilisera la clé privée par défaut incluse dans le package.');
-    await TemplateService.saveCredential(credential);
+    await FetchTemplateService.saveCredential(credential);
   }
 
-  const templates: Template[] = await TemplateService.listTemplates(credential);
+  const templates: Template[] = await FetchTemplateService.listTemplates(credential);
   const responseTemplate = await prompts({
     type: 'select',
     name: 'templateChoice',
@@ -174,7 +174,7 @@ export async function createCommand(): Promise<void> {
 
   console.log(`📥 Clonage du template "${chosenTemplate.name}" dans ${targetDir}...`);
   try {
-    await TemplateService.fetchTemplate(targetDir, chosenTemplate.url, credential);
+    await FetchTemplateService.fetchTemplate(targetDir, chosenTemplate.url, credential);
 
     import('../config/cli-config.js').then(({ defaultCliConfig }) => {
       const configContent: CliConfig = { ...defaultCliConfig, projectName };

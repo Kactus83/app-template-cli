@@ -11,6 +11,7 @@ import { monitorCommand } from './commands/monitor.js';
 import { helpersCommand } from './commands/helpers.js';
 import { doctorCommand } from './commands/doctor.js';
 import { credentialsCommand } from './commands/credentials.js';
+import { templateCommand } from './commands/template.js';
 
 
 const program = new Command();
@@ -67,6 +68,12 @@ program
   .command('credentials')
   .description('🔑 Utilitaire pour les credentials utilisateur.')
   .action(credentialsCommand);
+
+// Commande en liens avec les infos du template
+program
+  .command('template')
+  .description('📄 Affiche les informations du template et le listing des services.')
+  .action(templateCommand);
 
 // Personnalisation du message d'aide général
 program.configureHelp({

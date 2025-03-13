@@ -1,6 +1,6 @@
 {
   "name": "app-wizard-cli",
-  "version": "0.0.33",
+  "version": "0.0.35",
   "description": "CLI pour gérer votre projet Nest/Angular",
   "main": "dist/cli.js",
   "bin": {
@@ -26,6 +26,7 @@
     "commander": "^13.1.0",
     "fs": "^0.0.1-security",
     "fs-extra": "^11.3.0",
+    "js-yaml": "^4.1.0",
     "path": "^0.12.7",
     "prompts": "^2.4.2"
   },
@@ -34,6 +35,7 @@
     "@types/chalk": "^0.4.31",
     "@types/commander": "^2.12.0",
     "@types/fs-extra": "^11.0.4",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.13.9",
     "@types/prompts": "^2.4.9",
     "copyfiles": "^2.4.1",
