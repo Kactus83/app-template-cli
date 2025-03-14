@@ -2,6 +2,7 @@ import { TemplateService } from '../services/template-service.js';
 import prompts from 'prompts';
 import chalk from 'chalk';
 
+
 export async function templateCommand(): Promise<void> {
   try {
     console.log(chalk.blue('=== Informations du Template ==='));

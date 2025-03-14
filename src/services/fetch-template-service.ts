@@ -2,29 +2,7 @@ import { execSync } from 'child_process';
 import fs from 'fs-extra';
 import * as path from 'path';
 import os from 'os';
-
-/**
- * Retourne le chemin absolu par défaut vers la clé privée incluse dans le package.
- * Le chemin est nettoyé pour retirer tout caractère indésirable (par exemple, un slash initial sur Windows).
- *
- * @returns {string} Le chemin absolu vers la clé privée par défaut.
- */
-function getDefaultKeyPath(): string {
-  let p = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'secrets', 'deploy_key_auth_boilerplate');
-  p = p.replace(/^[/\\]+/, '');
-  return p;
-}
-
-/**
- * Interface représentant les informations de connexion utilisateur.
- *
- * @property {string} username - Le nom d'utilisateur.
- * @property {string} password - Le mot de passe.
- */
-export interface Credential {
-  username: string;
-  password: string;
-}
+import { Credential, CredentialsService } from './credentials-service.js';
 
 /**
  * Interface représentant un template.
@@ -54,57 +32,16 @@ export class FetchTemplateService {
     url: 'git@github.com:Kactus83/app-template.git',
   };
 
-  /** Chemin vers le fichier de credentials utilisateur (stocké dans le dossier personnel). */
-  private static CREDENTIAL_FILE: string = path.join(os.homedir(), '.appwizard-credentials.json');
-
-  /** Chemin par défaut vers la clé privée incluse dans le package. */
-  public static DEFAULT_KEY_PATH: string = getDefaultKeyPath();
-
-  /**
-   * Enregistre les credentials utilisateur dans le fichier de configuration.
-   *
-   * @param credential - Les credentials à enregistrer.
-   * @returns {Promise<void>}
-   * @throws Une erreur en cas d'échec d'écriture.
-   */
-  public static async saveCredential(credential: Credential): Promise<void> {
-    try {
-      await fs.writeFile(FetchTemplateService.CREDENTIAL_FILE, JSON.stringify(credential, null, 2));
-      console.log('✅ Credential utilisateur enregistré avec succès.');
-    } catch (error) {
-      console.error('❌ Erreur lors de l’enregistrement du credential utilisateur:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Récupère les credentials utilisateur enregistrés.
-   *
-   * @returns {Promise<Credential | undefined>} Les credentials ou undefined s'ils n'existent pas.
-   */
-  public static async getCredential(): Promise<Credential | undefined> {
-    if (await fs.pathExists(FetchTemplateService.CREDENTIAL_FILE)) {
-      const data = await fs.readFile(FetchTemplateService.CREDENTIAL_FILE, 'utf8');
-      try {
-        const json = JSON.parse(data) as Credential;
-        return json;
-      } catch (error) {
-        console.error('❌ Erreur lors de la lecture du fichier de credential utilisateur.', error);
-        return undefined;
-      }
-    }
-    return undefined;
-  }
-
   /**
    * Renvoie la liste des templates disponibles.
    *
    * Pour cette version, seul le template par défaut est renvoyé.
-   *
-   * @param _credential - Les credentials utilisateur (non utilisés ici, mais réservés pour une évolution future).
+   * Par la suite, on utilisera credentials service pour authentifier l'utilisateur et récupérer ses templates depuis le backend.
    * @returns {Promise<Template[]>} Un tableau de templates.
    */
-  public static async listTemplates(_credential: Credential): Promise<Template[]> {
+  public static async listTemplates(): Promise<Template[]> {
+    // Pour cette version, seul le template par défaut est renvoyé
+    // Par la suite on utilisera credentials service pour authentifier l'user et récupérer ses templates depuis le backend
     return [FetchTemplateService.DEFAULT_TEMPLATE];
   }
 
@@ -114,16 +51,16 @@ export class FetchTemplateService {
    *
    * @param targetDir - Chemin absolu du répertoire cible où copier les fichiers.
    * @param repoUrl - L'URL du dépôt Git du template.
-   * @param _credential - Les credentials utilisateur (non utilisés pour le clonage).
    * @returns {Promise<void>}
    * @throws Une erreur si le clonage ou la copie échoue.
    */
   public static async fetchTemplate(
     targetDir: string,
-    repoUrl: string,
-    _credential: Credential
+    repoUrl: string
   ): Promise<void> {
-    const rawKeyPath = FetchTemplateService.DEFAULT_KEY_PATH;
+
+    // Récupérer le clef privée temporaire. Cela devrait etre remplacée par l'authentification de l'utilisateur à terme.
+    const rawKeyPath = CredentialsService.DEFAULT_KEY_PATH;
     const fixedKeyPath = rawKeyPath.replace(/\\/g, '/');
     const quotedKeyPath = `"${fixedKeyPath}"`;
 

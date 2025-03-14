@@ -1,9 +1,11 @@
 import fs from 'fs-extra';
 import * as path from 'path';
 import prompts from 'prompts';
-import { CliConfig } from '../config/cli-config.js';
-import { FetchTemplateService, Template, Credential } from '../services/fetch-template-service.js';
+import { FetchTemplateService, Template } from '../services/fetch-template-service.js';
 import { GitService } from '../services/git-service.js';
+import { ConfigService } from '../services/config-service.js';
+import { TemplateService } from '../services/template-service.js';
+import { Credential, CredentialsService } from '../services/credentials-service.js';
 
 // Pour ESM, définir __dirname
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
@@ -138,7 +140,7 @@ export async function createCommand(): Promise<void> {
   }
 
   // Gestion des credentials utilisateur
-  let credential: Credential | undefined = await FetchTemplateService.getCredential();
+  let credential: Credential | undefined = await CredentialsService.getCredential();
   if (!credential) {
     console.log('Aucun credential utilisateur n\'est enregistré.');
     const responseCred = await prompts([
@@ -156,10 +158,10 @@ export async function createCommand(): Promise<void> {
     ]);
     credential = { username: responseCred.username, password: responseCred.password };
     console.log('⚠️  Avertissement : Les credentials saisis seront enregistrés, mais le clonage utilisera la clé privée par défaut incluse dans le package.');
-    await FetchTemplateService.saveCredential(credential);
+    await CredentialsService.saveCredential(credential);
   }
 
-  const templates: Template[] = await FetchTemplateService.listTemplates(credential);
+  const templates: Template[] = await FetchTemplateService.listTemplates();
   const responseTemplate = await prompts({
     type: 'select',
     name: 'templateChoice',
@@ -174,15 +176,16 @@ export async function createCommand(): Promise<void> {
 
   console.log(`📥 Clonage du template "${chosenTemplate.name}" dans ${targetDir}...`);
   try {
-    await FetchTemplateService.fetchTemplate(targetDir, chosenTemplate.url, credential);
+    await FetchTemplateService.fetchTemplate(targetDir, chosenTemplate.url);
 
-    import('../config/cli-config.js').then(({ defaultCliConfig }) => {
-      const configContent: CliConfig = { ...defaultCliConfig, projectName };
-      fs.writeFile(configPath, JSON.stringify(configContent, null, 2))
-        .then(() => console.log(`✅ Le projet "${projectName}" a été créé avec succès dans ${targetDir} !`))
-        .catch(err => console.error('❌ Erreur lors de la création du fichier de configuration :', err));
-    });
+    // Vérifier la validité des configurations du template.
+    await TemplateService.checkAllConfigs();
 
+    // Vérifier la validité de la configuration du projet (cli).
+    await ConfigService.ensureOrUpdateConfig(targetDir, projectName);
+    console.log(`✅ Le projet "${projectName}" a été créé avec succès dans ${targetDir} !`);
+
+    // Créer ou mettre à jour le dépôt Git.
     await GitService.handleRepository(targetDir, projectName);
   } catch (error) {
     console.error('❌ Une erreur est survenue durant la création du projet :', error);

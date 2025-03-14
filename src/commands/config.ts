@@ -1,5 +1,4 @@
-import pkg from 'fs-extra';
-const { readFile, existsSync, writeFile } = pkg;
+import fs from 'fs-extra';
 import * as path from 'path';
 import prompts from 'prompts';
 import { CliConfig } from '../config/cli-config.js';
@@ -16,14 +15,14 @@ export async function configCommand(): Promise<void> {
   const configFileName = '.app-template';
   const configPath = path.resolve(process.cwd(), configFileName);
 
-  if (!existsSync(configPath)) {
+  if (!fs.existsSync(configPath)) {
     console.error(`Aucun fichier de configuration "${configFileName}" trouvé. Veuillez d'abord exécuter "appwizard create".`);
     return;
   }
 
   let config: CliConfig;
   try {
-    const configContent = await readFile(configPath, 'utf8');
+    const configContent = await fs.readFile(configPath, 'utf8');
     config = JSON.parse(configContent) as CliConfig;
   } catch (error) {
     console.error("Erreur lors de la lecture de la configuration :", error);
@@ -33,7 +32,6 @@ export async function configCommand(): Promise<void> {
   console.log("Configuration actuelle :");
   console.log(JSON.stringify(config, null, 2));
 
-  // Modification explicite de chaque propriété pour éviter les problèmes de typage
   // Modifier projectName (string)
   const projectNameResp = await prompts({
     type: 'text',
@@ -45,49 +43,49 @@ export async function configCommand(): Promise<void> {
     config.projectName = projectNameResp.projectName.trim();
   }
 
-  // Modifier performTests (boolean)
+  // Modifier performTests (boolean) dans buildOptions
   const performTestsResp = await prompts({
     type: 'toggle',
     name: 'performTests',
-    message: `Modifier "performTests" (actuel: ${config.performTests}) ?`,
-    initial: config.performTests,
+    message: `Modifier "performTests" (actuel: ${config.buildOptions.performTests}) ?`,
+    initial: config.buildOptions.performTests,
     active: 'true',
     inactive: 'false'
   });
-  config.performTests = performTestsResp.performTests;
+  config.buildOptions.performTests = performTestsResp.performTests;
 
-  // Modifier performLint (boolean)
+  // Modifier performLint (boolean) dans buildOptions
   const performLintResp = await prompts({
     type: 'toggle',
     name: 'performLint',
-    message: `Modifier "performLint" (actuel: ${config.performLint}) ?`,
-    initial: config.performLint,
+    message: `Modifier "performLint" (actuel: ${config.buildOptions.performLint}) ?`,
+    initial: config.buildOptions.performLint,
     active: 'true',
     inactive: 'false'
   });
-  config.performLint = performLintResp.performLint;
+  config.buildOptions.performLint = performLintResp.performLint;
 
-  // Modifier hotFrontend (boolean)
+  // Modifier hotFrontend (boolean) dans buildOptions
   const hotFrontendResp = await prompts({
     type: 'toggle',
     name: 'hotFrontend',
-    message: `Modifier "hotFrontend" (actuel: ${config.hotFrontend}) ?`,
-    initial: config.hotFrontend,
+    message: `Modifier "hotFrontend" (actuel: ${config.buildOptions.hotFrontend}) ?`,
+    initial: config.buildOptions.hotFrontend,
     active: 'true',
     inactive: 'false'
   });
-  config.hotFrontend = hotFrontendResp.hotFrontend;
+  config.buildOptions.hotFrontend = hotFrontendResp.hotFrontend;
 
-  // Modifier openWindow (boolean)
+  // Modifier openWindow (boolean) dans buildOptions
   const openWindowResp = await prompts({
     type: 'toggle',
     name: 'openWindow',
-    message: `Modifier "openWindow" (actuel: ${config.openWindow}) ?`,
-    initial: config.openWindow,
+    message: `Modifier "openWindow" (actuel: ${config.buildOptions.openWindow}) ?`,
+    initial: config.buildOptions.openWindow,
     active: 'true',
     inactive: 'false'
   });
-  config.openWindow = openWindowResp.openWindow;
+  config.buildOptions.openWindow = openWindowResp.openWindow;
 
   console.log("Nouvelle configuration :");
   console.log(JSON.stringify(config, null, 2));
@@ -101,7 +99,7 @@ export async function configCommand(): Promise<void> {
 
   if (confirm.ok) {
     try {
-      await writeFile(configPath, JSON.stringify(config, null, 2));
+      await fs.writeFile(configPath, JSON.stringify(config, null, 2));
       console.log("✅ Configuration mise à jour avec succès.");
     } catch (error) {
       console.error("Erreur lors de l'écriture de la configuration :", error);
