@@ -1,15 +1,11 @@
 import { execSync } from 'child_process';
 import prompts from 'prompts';
 import chalk from 'chalk';
+import { TemplateService } from '../services/template-service.js';
+import { performGlobalClean, forcedDockerClean } from '../services/clean-service.js';
 
 /**
  * Demande interactive pour lancer le service frontend après le build.
- *
- * @remarks
- * Cette fonction lance d’abord la génération des types via le service "blockchain-compile".
- * Ensuite, elle propose à l'utilisateur de choisir si le frontend doit être lancé.
- *
- * @returns Une promesse résolue après exécution.
  */
 async function runFrontendPrompt(): Promise<void> {
   console.clear();
@@ -25,11 +21,10 @@ async function runFrontendPrompt(): Promise<void> {
     return;
   }
 
-  console.log('\nVoulez-vous lancer le service FRONTEND en plus ?');
   const response = await prompts({
     type: 'select',
     name: 'launchFrontend',
-    message: 'Choisissez une option:',
+    message: 'Voulez-vous lancer le service FRONTEND ?',
     choices: [
       { title: 'Oui', value: true },
       { title: 'Non', value: false }
@@ -37,28 +32,19 @@ async function runFrontendPrompt(): Promise<void> {
   });
 
   if (response.launchFrontend) {
-    console.log(chalk.blue('------------------------------------------------------'));
-    console.log(chalk.blue('Lancement du build avec le frontend...'));
-    console.log(chalk.blue('Vous pouvez prendre le temps pour un café !'));
-    console.log(chalk.blue('------------------------------------------------------'));
     try {
-      execSync('docker-compose --profile frontend up --build', { stdio: 'inherit' });
+      const frontendConfig = await TemplateService.loadServiceConfig('frontend');
+      if (frontendConfig) {
+        console.log(chalk.blue('Lancement du frontend...'));
+        execSync(frontendConfig.scripts.run.dev, { stdio: 'inherit' });
+      } else {
+        console.warn(chalk.yellow('Aucune configuration trouvée pour le service frontend.'));
+      }
     } catch (error) {
       console.error(chalk.red('Erreur lors du lancement du frontend:'), error);
     }
-  } else {
-    console.log(chalk.blue('------------------------------------------------------'));
-    console.log(chalk.blue('Lancement du build sans le frontend...'));
-    console.log(chalk.blue('Vous pouvez prendre le temps pour un café !'));
-    console.log(chalk.blue('------------------------------------------------------'));
-    try {
-      execSync('docker-compose up --build', { stdio: 'inherit' });
-    } catch (error) {
-      console.error(chalk.red('Erreur lors du lancement du build sans frontend:'), error);
-    }
   }
 
-  // Pause pour laisser l'utilisateur lire les résultats
   await prompts({
     type: 'text',
     name: 'pause',
@@ -68,17 +54,9 @@ async function runFrontendPrompt(): Promise<void> {
 
 /**
  * Commande interactive "build" qui propose plusieurs options de build.
- *
- * @remarks
- * Options proposées :
- * - Build sans clean
- * - Build avec clean
- * - Build avec nettoyage forcé (supprime images Docker et cache builder)
- * - Retour au menu principal
- *
- * Les options modifient des variables d'environnement pour être récupérées par Docker Compose.
- *
- * @returns Une promesse résolue une fois l'opération terminée.
+ * - L'utilisateur peut choisir de nettoyer l'environnement avant le build (clean normal ou forcé).
+ * - Ensuite, le CLI récupère la liste des services via TemplateService et exécute leur commande de build (version dev).
+ * - Enfin, le CLI propose de lancer le service frontend.
  */
 export async function buildCommand(): Promise<void> {
   console.clear();
@@ -86,8 +64,8 @@ export async function buildCommand(): Promise<void> {
   console.log(chalk.yellow('             Build Options'));
   console.log(chalk.yellow('======================================'));
   console.log('1. Build sans clean');
-  console.log('2. Build et clean');
-  console.log('3. Build et clean forcé (supprime images Docker et cache builder)');
+  console.log('2. Build avec clean');
+  console.log('3. Build avec clean forcé');
   console.log('4. Retour');
   console.log('');
 
@@ -97,58 +75,43 @@ export async function buildCommand(): Promise<void> {
     message: 'Choisissez une option:',
     choices: [
       { title: '1. Build sans clean', value: 'noClean' },
-      { title: '2. Build et clean', value: 'clean' },
-      { title: '3. Build et clean forcé', value: 'forcedClean' },
+      { title: '2. Build avec clean', value: 'clean' },
+      { title: '3. Build avec clean forcé', value: 'forcedClean' },
       { title: '4. Retour', value: 'return' }
     ]
   });
 
-  switch(response.option) {
-    case 'noClean':
-      console.log(chalk.blue('[Build sans clean]'));
-      process.env.RESET_VAULT = "false";
-      process.env.RESET_DATABASE = "false";
-      await runFrontendPrompt();
-      break;
-    case 'clean':
-      console.log(chalk.blue('[Build et clean]'));
-      process.env.RESET_VAULT = "true";
-      process.env.RESET_DATABASE = "true";
-      await runFrontendPrompt();
-      break;
-    case 'forcedClean':
-      console.log(chalk.blue('[Build et clean forcé]'));
-      process.env.RESET_VAULT = "true";
-      process.env.RESET_DATABASE = "true";
-      console.log(chalk.blue('------------------------------------------------------'));
-      console.log(chalk.blue('Êtes-vous sûr de vouloir effectuer un nettoyage forcé ?'));
-      console.log(chalk.blue('La suite va être très longue !'));
-      console.log(chalk.blue('------------------------------------------------------'));
-      const confirm = await prompts({
-        type: 'confirm',
-        name: 'confirm',
-        message: 'Choisissez [O/N]:',
-        initial: false
-      });
-      if (confirm.confirm) {
-        console.log(chalk.blue('------------------------------------------------------'));
-        console.log(chalk.blue('Exécution du nettoyage forcé Docker...'));
-        console.log(chalk.blue('------------------------------------------------------'));
-        try {
-          execSync('docker system prune --all --force', { stdio: 'inherit' });
-          execSync('docker builder prune --all --force', { stdio: 'inherit' });
-          console.log(chalk.green('Nettoyage forcé terminé.'));
-        } catch (error) {
-          console.error(chalk.red('Erreur lors du nettoyage forcé:'), error);
-        }
-        await runFrontendPrompt();
-      } else {
-        console.log(chalk.yellow('Nettoyage forcé annulé.'));
-      }
-      break;
-    case 'return':
-    default:
-      console.log(chalk.green('Retour au menu principal.'));
-      break;
+  if (response.option === 'clean') {
+    try {
+      await performGlobalClean();
+      console.log(chalk.green('Nettoyage normal terminé.'));
+    } catch (error) {
+      console.error(chalk.red('Erreur lors du nettoyage normal:'), error);
+    }
+  } else if (response.option === 'forcedClean') {
+    try {
+      await performGlobalClean();
+      forcedDockerClean();
+    } catch (error) {
+      console.error(chalk.red('Erreur lors du nettoyage forcé:'), error);
+    }
+  } else if (response.option === 'return') {
+    console.log(chalk.green('Retour au menu principal.'));
+    return;
   }
+  
+  // Récupérer la liste des services via TemplateService.
+  const services = await TemplateService.listServices();
+  // Exécuter la commande de build (version dev) pour chaque service dans l'ordre.
+  for (const service of services) {
+    console.log(chalk.blue(`Lancement du build pour le service: ${service.name}`));
+    try {
+      execSync(service.scripts.build.dev, { stdio: 'inherit' });
+      console.log(chalk.green(`Build terminé pour le service: ${service.name}`));
+    } catch (error) {
+      console.error(chalk.red(`Erreur lors du build pour le service ${service.name}:`), error);
+    }
+  }
+
+  await runFrontendPrompt();
 }
