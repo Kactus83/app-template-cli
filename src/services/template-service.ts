@@ -1,7 +1,13 @@
 import fs from 'fs-extra';
 import path from 'path';
 import yaml from 'js-yaml';
-import { TemplateConfig, defaultTemplateConfig, ServiceConfig, ServiceScript, ExtendedServiceConfig } from '../config/template-config.js';
+import {
+  TemplateConfig,
+  defaultTemplateConfig,
+  ServiceConfig,
+  ServiceScript,
+  ExtendedServiceConfig
+} from '../config/template-config.js';
 
 /**
  * Service permettant de charger la configuration du template et des services.
@@ -41,30 +47,55 @@ export class TemplateService {
     } else if (typeof serviceDef.build === 'object' && serviceDef.build.context) {
       return path.resolve(process.cwd(), serviceDef.build.context);
     }
-    // Si aucune info de build n'est trouvée, on suppose le dossier par défaut.
     return path.join(process.cwd(), 'containers', serviceName);
   }
 
   /**
+   * Récupère le health check d'un service depuis le docker-compose.
+   * Le champ healthcheck.test doit être présent et sera converti en chaîne de caractères.
+   * @param serviceName Nom du service.
+   * @returns La commande de health check.
+   */
+  static async getServiceHealthCheck(serviceName: string): Promise<string> {
+    const composePath = path.join(process.cwd(), 'docker-compose.yml');
+    if (!(await fs.pathExists(composePath))) {
+      throw new Error(`Fichier docker-compose.yml introuvable dans ${process.cwd()}`);
+    }
+    const composeContent = await fs.readFile(composePath, 'utf8');
+    const composeData: any = yaml.load(composeContent);
+    const serviceDef = composeData.services?.[serviceName];
+    if (!serviceDef) {
+      throw new Error(`Service '${serviceName}' non trouvé dans docker-compose.yml`);
+    }
+    if (serviceDef.healthcheck && serviceDef.healthcheck.test) {
+      const test = serviceDef.healthcheck.test;
+      if (Array.isArray(test)) {
+        return test.join(' ');
+      } else if (typeof test === 'string') {
+        return test;
+      }
+    }
+    throw new Error(`Le service '${serviceName}' ne possède pas de healthcheck défini dans docker-compose.yml`);
+  }
+
+  /**
    * Vérifie si le fichier de configuration du service existe et est conforme.
-   * S'il est absent ou incomplet, il crée/répare le fichier avec des valeurs par défaut.
+   * S'il est absent ou incomplet (à l'exception de healthCheck qui est récupéré depuis docker-compose),
+   * il crée/répare le fichier avec des valeurs par défaut.
    * Le fichier est situé dans le contexte de build (déduit du docker-compose) et doit s'appeler `${serviceName}.yaml`.
-   * 
-   * La configuration réparée doit contenir les champs obligatoires :
-   * - healthCheck (string) : commande ou URL de vérification.
-   * - order (number) : ordre de lancement (incontournable pour gérer les dépendances).
-   * 
+   * Le fichier doit contenir obligatoirement le champ "order" (number).
+   *
    * @param serviceName Nom du service tel que défini dans le docker-compose.
    * @returns La configuration complète du service sous forme d'ExtendedServiceConfig.
    */
   static async checkConfigsAndRepair(serviceName: string): Promise<ExtendedServiceConfig> {
     const buildContext = await TemplateService.getServiceBuildContext(serviceName);
     const serviceConfigPath = path.join(buildContext, `${serviceName}.yaml`);
-    let config: Partial<ServiceConfig> & { healthCheck?: string; order?: number } = {};
+    let config: Partial<ServiceConfig> & { order?: number } = {};
     if (await fs.pathExists(serviceConfigPath)) {
       try {
         const fileContents = await fs.readFile(serviceConfigPath, 'utf8');
-        config = yaml.load(fileContents) as Partial<ServiceConfig> & { healthCheck?: string; order?: number };
+        config = yaml.load(fileContents) as Partial<ServiceConfig> & { order?: number };
       } catch (error) {
         console.warn(`Erreur lors de la lecture de la config pour ${serviceName}: ${error}`);
       }
@@ -74,13 +105,13 @@ export class TemplateService {
       dev: `echo "Commande dev pour ${serviceName} non définie"`,
       prod: `echo "Commande prod pour ${serviceName} non définie"`
     };
-    // Les champs "healthCheck" et "order" sont indispensables.
-    if (!config.healthCheck || typeof config.healthCheck !== 'string' || config.healthCheck.trim() === "") {
-      throw new Error(`Le fichier de configuration pour '${serviceName}' doit contenir le champ "healthCheck".`);
-    }
+    // Le champ "order" est indispensable pour gérer l'ordre de déploiement.
     if (config.order === undefined || typeof config.order !== 'number') {
       throw new Error(`Le fichier de configuration pour '${serviceName}' doit contenir le champ "order" (number).`);
     }
+    // Récupérer le health check directement depuis docker-compose.
+    const healthCheck = await TemplateService.getServiceHealthCheck(serviceName);
+
     const defaultServiceConfig: ServiceConfig = {
       prodAddress: config.prodAddress || "",
       vaultRole: config.vaultRole || `${serviceName}-role`,
@@ -100,12 +131,11 @@ export class TemplateService {
         }
       }
     };
-    // Construire l'objet ExtendedServiceConfig en ajoutant "order" et "healthCheck" depuis le fichier.
     const extendedServiceConfig: ExtendedServiceConfig = {
       ...defaultServiceConfig,
       order: config.order as number,
-      healthCheck: config.healthCheck as string,
-      name: serviceName // Le nom est déduit du serviceName
+      healthCheck: healthCheck,
+      name: serviceName
     };
     // Écrire la configuration réparée dans le fichier.
     await fs.writeFile(serviceConfigPath, yaml.dump(extendedServiceConfig));
@@ -149,12 +179,10 @@ export class TemplateService {
             services.push(config);
           }
         } catch (error) {
-          // On ignore les dossiers qui ne possèdent pas de configuration.
           console.warn(`⚠️  Service '${entry}' ignoré: ${error}`);
         }
       }
     }
-    // Tri par ordre croissant.
     services.sort((a, b) => a.order - b.order);
     return services;
   }
@@ -198,10 +226,8 @@ export class TemplateService {
    * Affiche des avertissements en cas de réparation.
    */
   static async checkAllConfigs(): Promise<void> {
-    // Vérifier la configuration du template.
     const templateConfig = await TemplateService.checkTemplateConfig();
     console.log(`Template: ${templateConfig.name} - Version: ${templateConfig.version}`);
-    // Vérifier la configuration de tous les services.
     const containersPath = path.join(process.cwd(), 'containers');
     const entries = await fs.readdir(containersPath);
     for (const entry of entries) {

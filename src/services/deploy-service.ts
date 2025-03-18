@@ -22,7 +22,7 @@ export class DeployService {
     const start = Date.now();
     while (true) {
       try {
-        // Exécute la commande healthCheck, qui doit renvoyer 0 si le service est sain.
+        // Exécute la commande healthCheck récupérée depuis docker-compose.
         execSync(service.healthCheck, { stdio: 'ignore' });
         console.log(chalk.green(`Service ${service.name} est sain (health check validé).`));
         return;
@@ -38,22 +38,19 @@ export class DeployService {
 
   /**
    * Déploie tous les services (en mode dev) dans l'ordre défini par le champ "order".
-   * Pour chaque service, exécute la commande run, attend son health check puis passe au suivant.
+   * Pour chaque service, exécute la commande run, attend que son health check soit validé, puis passe au service suivant.
    */
   static async deployAllServices(): Promise<void> {
     const services: ExtendedServiceConfig[] = await TemplateService.listServices();
-    // Les services sont triés par ordre croissant (champ "order").
     for (const service of services) {
       console.log(chalk.blue(`Déploiement du service: ${service.name} (order: ${service.order})`));
       try {
-        // Exécute la commande de run en mode dev.
         execSync(service.scripts.run.dev, { stdio: 'inherit' });
-        // Attend que le health check du service soit validé.
         await DeployService.waitForHealthCheck(service);
         console.log(chalk.green(`Service ${service.name} déployé avec succès.`));
       } catch (error) {
         console.error(chalk.red(`Erreur lors du déploiement du service ${service.name}:`), error);
-        throw error; // On peut choisir de stopper ou continuer selon la stratégie.
+        throw error;
       }
     }
   }
