@@ -12,6 +12,7 @@ import { helpersCommand } from './commands/helpers.js';
 import { doctorCommand } from './commands/doctor.js';
 import { credentialsCommand } from './commands/credentials.js';
 import { templateCommand } from './commands/template.js';
+import { deployCommand } from './commands/deploy.js';
 
 
 const program = new Command();
@@ -38,6 +39,12 @@ program
   .command('build')
   .description('🚧 Lance le processus de build (menu interactif par défaut).')
   .action(buildCommand);
+
+// Commande "deploy"
+program
+  .command('deploy')
+  .description('🚀 Déploie le projet (menu interactif par défaut).')
+  .action(deployCommand);
 
 // Commande "clean"
 program

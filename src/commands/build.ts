@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 import prompts from 'prompts';
 import chalk from 'chalk';
-import { TemplateService } from '../services/template-service.js';
+import { BuildService } from '../services/build-service.js';
 import { performGlobalClean, forcedDockerClean } from '../services/clean-service.js';
 
 /**
@@ -33,13 +33,8 @@ async function runFrontendPrompt(): Promise<void> {
 
   if (response.launchFrontend) {
     try {
-      const frontendConfig = await TemplateService.loadServiceConfig('frontend');
-      if (frontendConfig) {
-        console.log(chalk.blue('Lancement du frontend...'));
-        execSync(frontendConfig.scripts.run.dev, { stdio: 'inherit' });
-      } else {
-        console.warn(chalk.yellow('Aucune configuration trouvée pour le service frontend.'));
-      }
+      // Pour le frontend, on se base sur docker-compose (par exemple, avec le profil "frontend").
+      execSync('docker-compose --profile frontend up --build', { stdio: 'inherit' });
     } catch (error) {
       console.error(chalk.red('Erreur lors du lancement du frontend:'), error);
     }
@@ -54,9 +49,9 @@ async function runFrontendPrompt(): Promise<void> {
 
 /**
  * Commande interactive "build" qui propose plusieurs options de build.
- * - L'utilisateur peut choisir de nettoyer l'environnement avant le build (clean normal ou forcé).
- * - Ensuite, le CLI récupère la liste des services via TemplateService et exécute leur commande de build (version dev).
- * - Enfin, le CLI propose de lancer le service frontend.
+ * - L'utilisateur peut choisir de nettoyer l'environnement (normal ou forcé).
+ * - Ensuite, BuildService est utilisé pour lancer le build des services dans l'ordre défini.
+ * - Enfin, il est proposé de lancer le service frontend.
  */
 export async function buildCommand(): Promise<void> {
   console.clear();
@@ -82,6 +77,7 @@ export async function buildCommand(): Promise<void> {
   });
 
   if (response.option === 'clean') {
+    console.log(chalk.blue('[Clean normal]'));
     try {
       await performGlobalClean();
       console.log(chalk.green('Nettoyage normal terminé.'));
@@ -89,6 +85,7 @@ export async function buildCommand(): Promise<void> {
       console.error(chalk.red('Erreur lors du nettoyage normal:'), error);
     }
   } else if (response.option === 'forcedClean') {
+    console.log(chalk.blue('[Clean forcé]'));
     try {
       await performGlobalClean();
       forcedDockerClean();
@@ -100,18 +97,8 @@ export async function buildCommand(): Promise<void> {
     return;
   }
   
-  // Récupérer la liste des services via TemplateService.
-  const services = await TemplateService.listServices();
-  // Exécuter la commande de build (version dev) pour chaque service dans l'ordre.
-  for (const service of services) {
-    console.log(chalk.blue(`Lancement du build pour le service: ${service.name}`));
-    try {
-      execSync(service.scripts.build.dev, { stdio: 'inherit' });
-      console.log(chalk.green(`Build terminé pour le service: ${service.name}`));
-    } catch (error) {
-      console.error(chalk.red(`Erreur lors du build pour le service ${service.name}:`), error);
-    }
-  }
-
+  // Lancer le build de tous les services via BuildService.
+  await BuildService.buildAllServices();
+  
   await runFrontendPrompt();
 }

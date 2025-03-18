@@ -41,3 +41,13 @@ export const defaultTemplateConfig: TemplateConfig = {
   version: "0.0.0",
   description: "Le template a été automatiquement réparé. Veuillez vérifier les configurations. Cette situation se produit si le fichier de configuration a été modifié de manière incorrecte ou supprimé."
 };
+
+
+/**
+ * Interface pour l'affichage d'un service, qui étend ServiceConfig en ajoutant le nom du service.
+ */
+export interface ExtendedServiceConfig extends ServiceConfig {
+  order: number;
+  name: string;
+  healthCheck: string;
+}

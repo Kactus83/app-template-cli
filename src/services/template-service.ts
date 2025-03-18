@@ -1,14 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import yaml from 'js-yaml';
-import { TemplateConfig, defaultTemplateConfig, ServiceConfig, ServiceScript } from '../config/template-config.js';
-
-/**
- * Interface pour l'affichage d'un service, qui étend ServiceConfig en ajoutant le nom du service.
- */
-export interface DisplayServiceConfig extends ServiceConfig {
-  name: string;
-}
+import { TemplateConfig, defaultTemplateConfig, ServiceConfig, ServiceScript, ExtendedServiceConfig } from '../config/template-config.js';
 
 /**
  * Service permettant de charger la configuration du template et des services.
@@ -56,17 +49,22 @@ export class TemplateService {
    * Vérifie si le fichier de configuration du service existe et est conforme.
    * S'il est absent ou incomplet, il crée/répare le fichier avec des valeurs par défaut.
    * Le fichier est situé dans le contexte de build (déduit du docker-compose) et doit s'appeler `${serviceName}.yaml`.
+   * 
+   * La configuration réparée doit contenir les champs obligatoires :
+   * - healthCheck (string) : commande ou URL de vérification.
+   * - order (number) : ordre de lancement (incontournable pour gérer les dépendances).
+   * 
    * @param serviceName Nom du service tel que défini dans le docker-compose.
-   * @returns La configuration complète du service.
+   * @returns La configuration complète du service sous forme d'ExtendedServiceConfig.
    */
-  static async checkConfigsAndRepair(serviceName: string): Promise<ServiceConfig> {
+  static async checkConfigsAndRepair(serviceName: string): Promise<ExtendedServiceConfig> {
     const buildContext = await TemplateService.getServiceBuildContext(serviceName);
     const serviceConfigPath = path.join(buildContext, `${serviceName}.yaml`);
-    let config: Partial<ServiceConfig> = {};
+    let config: Partial<ServiceConfig> & { healthCheck?: string; order?: number } = {};
     if (await fs.pathExists(serviceConfigPath)) {
       try {
         const fileContents = await fs.readFile(serviceConfigPath, 'utf8');
-        config = yaml.load(fileContents) as Partial<ServiceConfig>;
+        config = yaml.load(fileContents) as Partial<ServiceConfig> & { healthCheck?: string; order?: number };
       } catch (error) {
         console.warn(`Erreur lors de la lecture de la config pour ${serviceName}: ${error}`);
       }
@@ -76,6 +74,13 @@ export class TemplateService {
       dev: `echo "Commande dev pour ${serviceName} non définie"`,
       prod: `echo "Commande prod pour ${serviceName} non définie"`
     };
+    // Les champs "healthCheck" et "order" sont indispensables.
+    if (!config.healthCheck || typeof config.healthCheck !== 'string' || config.healthCheck.trim() === "") {
+      throw new Error(`Le fichier de configuration pour '${serviceName}' doit contenir le champ "healthCheck".`);
+    }
+    if (config.order === undefined || typeof config.order !== 'number') {
+      throw new Error(`Le fichier de configuration pour '${serviceName}' doit contenir le champ "order" (number).`);
+    }
     const defaultServiceConfig: ServiceConfig = {
       prodAddress: config.prodAddress || "",
       vaultRole: config.vaultRole || `${serviceName}-role`,
@@ -95,9 +100,16 @@ export class TemplateService {
         }
       }
     };
-    // Écrire la configuration par défaut (ou réparée) dans le fichier de config.
-    await fs.writeFile(serviceConfigPath, yaml.dump(defaultServiceConfig));
-    return defaultServiceConfig;
+    // Construire l'objet ExtendedServiceConfig en ajoutant "order" et "healthCheck" depuis le fichier.
+    const extendedServiceConfig: ExtendedServiceConfig = {
+      ...defaultServiceConfig,
+      order: config.order as number,
+      healthCheck: config.healthCheck as string,
+      name: serviceName // Le nom est déduit du serviceName
+    };
+    // Écrire la configuration réparée dans le fichier.
+    await fs.writeFile(serviceConfigPath, yaml.dump(extendedServiceConfig));
+    return extendedServiceConfig;
   }
 
   /**
@@ -106,7 +118,7 @@ export class TemplateService {
    * @param serviceName Nom du service.
    * @returns La configuration complète du service ou null s'il n'est pas configuré.
    */
-  static async loadServiceConfig(serviceName: string): Promise<ServiceConfig | null> {
+  static async loadServiceConfig(serviceName: string): Promise<ExtendedServiceConfig | null> {
     try {
       const config = await TemplateService.checkConfigsAndRepair(serviceName);
       return config;
@@ -120,12 +132,13 @@ export class TemplateService {
    * Liste l'ensemble des services en scannant le dossier containers.
    * Pour chaque sous-dossier (correspondant à un service), tente de charger et réparer le fichier de configuration
    * depuis le contexte de build indiqué dans docker-compose.yml.
-   * @returns La liste des configurations de service.
+   * Retourne la liste des ExtendedServiceConfig triée par ordre croissant (champ "order").
+   * @returns La liste triée des configurations de service.
    */
-  static async listServices(): Promise<DisplayServiceConfig[]> {
+  static async listServices(): Promise<ExtendedServiceConfig[]> {
     const containersPath = path.join(process.cwd(), 'containers');
     const entries = await fs.readdir(containersPath);
-    const services: DisplayServiceConfig[] = [];
+    const services: ExtendedServiceConfig[] = [];
     for (const entry of entries) {
       const serviceDir = path.join(containersPath, entry);
       const stats = await fs.stat(serviceDir);
@@ -133,16 +146,18 @@ export class TemplateService {
         try {
           const config = await TemplateService.loadServiceConfig(entry);
           if (config) {
-            // Créer un objet DisplayServiceConfig en ajoutant "name" issu du nom du dossier
-            services.push({ ...config, name: entry } as DisplayServiceConfig);
+            services.push(config);
           }
         } catch (error) {
           // On ignore les dossiers qui ne possèdent pas de configuration.
+          console.warn(`⚠️  Service '${entry}' ignoré: ${error}`);
         }
       }
     }
+    // Tri par ordre croissant.
+    services.sort((a, b) => a.order - b.order);
     return services;
-  }  
+  }
 
   /**
    * Vérifie la configuration du fichier template.yaml.
@@ -195,7 +210,7 @@ export class TemplateService {
       if (stats.isDirectory()) {
         try {
           const serviceConfig = await TemplateService.checkConfigsAndRepair(entry);
-          console.log(`Service '${entry}' configuré avec prodAddress: ${serviceConfig.prodAddress}`);
+          console.log(`Service '${entry}' (order: ${serviceConfig.order}) configuré avec prodAddress: ${serviceConfig.prodAddress}`);
         } catch (error) {
           console.warn(`⚠️  Erreur lors de la vérification du service '${entry}': ${error}`);
         }
