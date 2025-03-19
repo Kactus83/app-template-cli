@@ -1,34 +1,69 @@
 import prompts from 'prompts';
 import chalk from 'chalk';
+import { BuildService } from '../services/build-service.js';
 import { DeployService } from '../services/deploy-service.js';
+import { performGlobalClean, forcedDockerClean } from '../services/clean-service.js';
 
 /**
- * Commande interactive "deploy" qui déploie les services en mode dev.
- * Les services sont déployés dans l'ordre défini par leur champ "order" et le déploiement
- * d'un service n'est lancé qu'après la validation de son health check.
- *
- * @returns Promise<void>
+ * Commande interactive "deploy" qui déploie le projet en production.
+ * Le processus comprend :
+ *  - Une confirmation de déploiement.
+ *  - Une option pour effectuer un nettoyage complet de l'environnement.
+ *  - Le build en mode production via BuildService.buildProd().
+ *  - Le déploiement (push des images) pour chaque service via DeployService.deployAllServices().
  */
 export async function deployCommand(): Promise<void> {
   console.clear();
   console.log(chalk.yellow('======================================'));
-  console.log(chalk.yellow('             Deploy Options'));
+  console.log(chalk.yellow('         Deploy Options (Prod)'));
   console.log(chalk.yellow('======================================'));
 
-  const response = await prompts({
+  // Confirmation de déploiement
+  const confirmResponse = await prompts({
     type: 'confirm',
     name: 'confirm',
-    message: 'Confirmez-vous le déploiement des services en mode dev ?',
-    initial: true,
+    message: 'Confirmez-vous le déploiement du projet en production ?',
+    initial: false,
   });
 
-  if (!response.confirm) {
+  if (!confirmResponse.confirm) {
     console.log(chalk.green('Déploiement annulé.'));
     return;
   }
 
+  // Option de nettoyage complet
+  const cleanResponse = await prompts({
+    type: 'confirm',
+    name: 'clean',
+    message: 'Souhaitez-vous effectuer un nettoyage complet de l\'environnement avant le déploiement ?',
+    initial: true,
+  });
+
+  if (cleanResponse.clean) {
+    console.log(chalk.blue('[Nettoyage complet]'));
+    try {
+      await performGlobalClean();
+      forcedDockerClean();
+      console.log(chalk.green('Nettoyage complet terminé.'));
+    } catch (error) {
+      console.error(chalk.red('Erreur lors du nettoyage complet:'), error);
+      return;
+    }
+  }
+
+  // Lancer le build en mode production
+  console.log(chalk.blue('Lancement du build en mode production...'));
   try {
-    console.log(chalk.blue('Déploiement des services en cours...'));
+    await BuildService.buildProd();
+    console.log(chalk.green('Build en mode production terminé avec succès.'));
+  } catch (error) {
+    console.error(chalk.red('Erreur lors du build en mode production:'), error);
+    return;
+  }
+
+  // Déployer les services (push des images)
+  console.log(chalk.blue('Déploiement des services en production (push des images) en cours...'));
+  try {
     await DeployService.deployAllServices();
     console.log(chalk.green('Déploiement terminé avec succès.'));
   } catch (error) {

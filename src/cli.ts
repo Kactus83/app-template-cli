@@ -13,6 +13,7 @@ import { doctorCommand } from './commands/doctor.js';
 import { credentialsCommand } from './commands/credentials.js';
 import { templateCommand } from './commands/template.js';
 import { deployCommand } from './commands/deploy.js';
+import { devRunCommand } from './commands/dev-run.js';
 
 
 const program = new Command();
@@ -39,6 +40,12 @@ program
   .command('build')
   .description('🚧 Lance le processus de build (menu interactif par défaut).')
   .action(buildCommand);
+
+// Commande "dev run"
+program
+  .command('dev-run')
+  .description('🏃‍♂️ Lance les conteneurs Docker en mode développement.')
+  .action(devRunCommand);
 
 // Commande "deploy"
 program

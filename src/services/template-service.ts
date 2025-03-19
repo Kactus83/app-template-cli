@@ -5,9 +5,9 @@ import {
   TemplateConfig,
   defaultTemplateConfig,
   ServiceConfig,
-  ServiceScript,
   ExtendedServiceConfig
 } from '../config/template-config.js';
+import { deduceDeploymentOrder } from '../utils/docker-compose-utils.js';
 
 /**
  * Service permettant de charger la configuration du template et des services.
@@ -51,10 +51,26 @@ export class TemplateService {
   }
 
   /**
-   * Récupère le health check d'un service depuis le docker-compose.
-   * Le champ healthcheck.test doit être présent et sera converti en chaîne de caractères.
+   * Déduit l'ordre d'un service à partir du docker-compose en se basant sur l'ordre d'apparition des clés.
+   * Cette fonction est utilisée si le champ "order" n'est pas défini dans la configuration du service.
    * @param serviceName Nom du service.
-   * @returns La commande de health check.
+   * @returns Un nombre représentant l'ordre (commençant à 1).
+   */
+  static async getServiceOrder(serviceName: string): Promise<number> {
+    const composePath = path.join(process.cwd(), 'docker-compose.yml');
+    const orderList: string[] = await deduceDeploymentOrder(composePath);
+    const index = orderList.indexOf(serviceName);
+    if (index === -1) {
+      throw new Error(`Service '${serviceName}' non trouvé dans l'ordre déduit du docker-compose.`);
+    }
+    return index + 1;
+  }
+
+  /**
+   * Récupère le health check d'un service depuis le docker-compose.
+   * On s'attend à ce que le champ healthcheck.test contienne la commande (souvent ["CMD", "/scripts/check_health.sh"]).
+   * @param serviceName Nom du service.
+   * @returns La commande de health check sous forme de chaîne.
    */
   static async getServiceHealthCheck(serviceName: string): Promise<string> {
     const composePath = path.join(process.cwd(), 'docker-compose.yml');
@@ -80,10 +96,10 @@ export class TemplateService {
 
   /**
    * Vérifie si le fichier de configuration du service existe et est conforme.
-   * S'il est absent ou incomplet (à l'exception de healthCheck qui est récupéré depuis docker-compose),
+   * S'il est absent ou incomplet (à l'exception du champ healthCheck qui est récupéré depuis docker-compose),
    * il crée/répare le fichier avec des valeurs par défaut.
    * Le fichier est situé dans le contexte de build (déduit du docker-compose) et doit s'appeler `${serviceName}.yaml`.
-   * Le fichier doit contenir obligatoirement le champ "order" (number).
+   * Le fichier doit contenir obligatoirement le champ "order".
    *
    * @param serviceName Nom du service tel que défini dans le docker-compose.
    * @returns La configuration complète du service sous forme d'ExtendedServiceConfig.
@@ -100,36 +116,17 @@ export class TemplateService {
         console.warn(`Erreur lors de la lecture de la config pour ${serviceName}: ${error}`);
       }
     }
-    // Définir des valeurs par défaut pour le service si elles sont manquantes.
-    const defaultScript: ServiceScript = {
-      dev: `echo "Commande dev pour ${serviceName} non définie"`,
-      prod: `echo "Commande prod pour ${serviceName} non définie"`
-    };
-    // Le champ "order" est indispensable pour gérer l'ordre de déploiement.
+    
+    // Si le champ "order" n'est pas défini dans le YAML, le déduire depuis docker-compose.
     if (config.order === undefined || typeof config.order !== 'number') {
-      throw new Error(`Le fichier de configuration pour '${serviceName}' doit contenir le champ "order" (number).`);
+      config.order = await TemplateService.getServiceOrder(serviceName);
     }
-    // Récupérer le health check directement depuis docker-compose.
+    // Récupérer le health check depuis docker-compose.
     const healthCheck = await TemplateService.getServiceHealthCheck(serviceName);
-
     const defaultServiceConfig: ServiceConfig = {
       prodAddress: config.prodAddress || "",
       vaultRole: config.vaultRole || `${serviceName}-role`,
       secrets: config.secrets || [],
-      scripts: {
-        build: (config.scripts && config.scripts.build) || {
-          dev: `docker build -t ${serviceName}-dev ./containers/${serviceName}`,
-          prod: `docker build -t ${serviceName}-prod ./containers/${serviceName}`
-        },
-        run: (config.scripts && config.scripts.run) || {
-          dev: `docker-compose up ${serviceName}`,
-          prod: `docker run -d ${serviceName}-prod`
-        },
-        deploy: (config.scripts && config.scripts.deploy) || {
-          dev: defaultScript.dev,
-          prod: `./deploy_${serviceName}.sh --prod`
-        }
-      }
     };
     const extendedServiceConfig: ExtendedServiceConfig = {
       ...defaultServiceConfig,
@@ -137,7 +134,6 @@ export class TemplateService {
       healthCheck: healthCheck,
       name: serviceName
     };
-    // Écrire la configuration réparée dans le fichier.
     await fs.writeFile(serviceConfigPath, yaml.dump(extendedServiceConfig));
     return extendedServiceConfig;
   }

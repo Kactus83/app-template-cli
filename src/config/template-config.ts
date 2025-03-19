@@ -5,14 +5,8 @@ export interface TemplateConfig {
   name: string;
   version: string;
   description: string;
-}
-
-/**
- * Interface représentant une commande à exécuter pour un environnement donné.
- */
-export interface ServiceScript {
-  dev: string;
-  prod: string;
+  prebuildCommand?: string;
+  devRunCommand?: string;
 }
 
 /**
@@ -26,11 +20,6 @@ export interface ServiceConfig {
   prodAddress: string;
   vaultRole: string;
   secrets: string[];
-  scripts: {
-    build: ServiceScript;
-    run: ServiceScript;
-    deploy: ServiceScript;
-  };
 }
 
 /**
@@ -39,7 +28,9 @@ export interface ServiceConfig {
 export const defaultTemplateConfig: TemplateConfig = {
   name: "Repaired Template",
   version: "0.0.0",
-  description: "Le template a été automatiquement réparé. Veuillez vérifier les configurations. Cette situation se produit si le fichier de configuration a été modifié de manière incorrecte ou supprimé."
+  description: "Le template a été automatiquement réparé. Veuillez vérifier les configurations. Cette situation se produit si le fichier de configuration a été modifié de manière incorrecte ou supprimé.",
+  prebuildCommand: "docker-compose -f docker-compose.prebuild.yml up --abort-on-container-exit prebuild",
+  devRunCommand: "docker-compose -f docker-compose.dev.yml up"
 };
 
 

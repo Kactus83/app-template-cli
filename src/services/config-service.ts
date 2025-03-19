@@ -41,4 +41,24 @@ export class ConfigService {
     configContent.projectName = projectName;
     await fs.writeFile(configPath, JSON.stringify(configContent, null, 2));
   }
+
+  /**
+   * Récupère la configuration CLI depuis le fichier de configuration.
+   * Si le fichier n'existe pas, retourne la configuration par défaut.
+   * @param targetDir Répertoire cible (par défaut le dossier courant).
+   * @returns La configuration CLI.
+   */
+  static async getConfig(targetDir: string = process.cwd()): Promise<CliConfig> {
+    const configPath = ConfigService.getConfigPath(targetDir);
+    if (await fs.pathExists(configPath)) {
+      try {
+        const fileData = await fs.readFile(configPath, 'utf8');
+        return JSON.parse(fileData) as CliConfig;
+      } catch (error) {
+        throw new Error(`Erreur lors de la lecture de la configuration: ${error}`);
+      }
+    } else {
+      return { ...defaultCliConfig };
+    }
+  }
 }
