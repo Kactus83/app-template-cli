@@ -18,8 +18,10 @@ export const directoriesToClean: string[] = [
   path.join(DEPLOYMENTS_DIR, 'mailhog'),
   path.join(DEPLOYMENTS_DIR, 'backend', 'logs'),
   path.join(DEPLOYMENTS_DIR, 'backend', 'docs'),
-  // Le dossier des types se trouve dans le projet lui-même.
-  path.resolve(process.cwd(), 'containers', 'backend', 'src', 'domains', 'web3', 'modules', 'dynamic', 'models', 'types')
+  // Cleaner les types générés dans els containers.
+  path.resolve(process.cwd(), 'containers', 'backend', 'src', 'domains', 'web3', 'modules', 'dynamic', 'models', 'types'),
+  path.resolve(process.cwd(), 'containers', 'containers', 'blockchain', 'types'),
+  path.resolve(process.cwd(), 'containers', 'frontend', 'src', 'app', 'core', 'web3', 'dynamic-types')
 ];
 
 // Mapping des fichiers de signalisation à supprimer.
