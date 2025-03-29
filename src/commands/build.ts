@@ -2,6 +2,7 @@ import prompts from 'prompts';
 import chalk from 'chalk';
 import { BuildService } from '../services/build-service.js';
 import { performGlobalClean, forcedDockerClean } from '../services/clean-service.js';
+import { SecretManagerService } from '../services/secret-manager-service.js';
 
 /**
  * Commande interactive "build" qui propose plusieurs options de build.
@@ -9,6 +10,7 @@ import { performGlobalClean, forcedDockerClean } from '../services/clean-service
  * puis sélectionner l'environnement de build (développement ou production).
  */
 export async function buildCommand(): Promise<void> {
+  
   console.clear();
   console.log(chalk.yellow('======================================'));
   console.log(chalk.yellow('             Build Options'));
@@ -73,6 +75,16 @@ export async function buildCommand(): Promise<void> {
   if (envResponse.environment === 'cancel') {
     console.log(chalk.green('Build annulé.'));
     return;
+  }
+
+  // Vérification et correction des fichiers d'environnement avant le build
+  const targetDir = process.cwd();
+  const envValid = await SecretManagerService.checkEnvFiles(targetDir);
+  if (!envValid) {
+    console.error(chalk.red('Les fichiers .env.dev et/ou .env.prod sont incomplets.'));
+    console.error(chalk.red('Les fichiers ont été automatiquement corrigés. Veuillez renseigner les valeurs manquantes, puis relancer le build.'));
+    await SecretManagerService.repairEnvFiles(targetDir);
+    process.exit(1);
   }
 
   // Lancer le build selon l'environnement choisi

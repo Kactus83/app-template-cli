@@ -6,8 +6,8 @@ import chalk from 'chalk';
 // Détermine le dossier de déploiement selon l'environnement.
 export const DEPLOYMENTS_DIR =
   process.env.NODE_ENV === 'production'
-    ? path.resolve(process.cwd(), '../prod-deployments')
-    : path.resolve(process.cwd(), '../dev-deployments');
+    ? path.resolve(process.cwd(), './prod-deployments')
+    : path.resolve(process.cwd(), './dev-deployments');
 
 // Mapping des dossiers à nettoyer (chemins sur l’hôte, relatifs à la racine du projet).
 export const directoriesToClean: string[] = [

@@ -28,12 +28,24 @@ export async function templateCommand(): Promise<void> {
       console.log(chalk.blue('\n=== Détails du Template ==='));
       console.log(JSON.stringify(templateConfig, null, 2));
     } else if (response.choice === 'servicesList') {
-      console.log(chalk.blue('\n=== Listing des Services ==='));
-      const services = await TemplateService.listServices();
-      if (services.length === 0) {
+      console.log(chalk.blue('\n=== Listing des Services (DEV) ==='));
+      const devServices = await TemplateService.listServices('dev');
+      if (devServices.length === 0) {
         console.log(chalk.yellow('Aucun service trouvé.'));
       } else {
-        services.forEach((service) => {
+        devServices.forEach((service) => {
+          console.log(chalk.green(`Service: ${service.name}`));
+          console.log(`  Prod Address: ${service.prodAddress || 'Non défini'}`);
+          console.log('');
+        });
+      }
+
+      console.log(chalk.blue('\n=== Listing des Services (PROD) ==='));
+      const prodServices = await TemplateService.listServices('prod');
+      if (prodServices.length === 0) {
+        console.log(chalk.yellow('Aucun service trouvé.'));
+      } else {
+        prodServices.forEach((service) => {
           console.log(chalk.green(`Service: ${service.name}`));
           console.log(`  Prod Address: ${service.prodAddress || 'Non défini'}`);
           console.log('');

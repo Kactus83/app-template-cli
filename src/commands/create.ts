@@ -5,6 +5,7 @@ import { FetchTemplateService, Template } from '../services/fetch-template-servi
 import { GitService } from '../services/git-service.js';
 import { ConfigService } from '../services/config-service.js';
 import { TemplateService } from '../services/template-service.js';
+import { SecretManagerService } from '../services/secret-manager-service.js';
 import { Credential, CredentialsService } from '../services/credentials-service.js';
 
 // Pour ESM, définir __dirname
@@ -179,11 +180,16 @@ export async function createCommand(): Promise<void> {
     await FetchTemplateService.fetchTemplate(targetDir, chosenTemplate.url);
 
     // Vérifier la validité des configurations du template.
-    await TemplateService.checkAllConfigs();
+    await TemplateService.checkAllConfigs('dev');
+    await TemplateService.checkAllConfigs('prod');
 
-    // Vérifier la validité de la configuration du projet (cli).
+    // Vérifier la validité de la configuration du projet (cli)
     await ConfigService.ensureOrUpdateConfig(targetDir, projectName);
     console.log(`✅ Le projet "${projectName}" a été créé avec succès dans ${targetDir} !`);
+    
+    // Verifier la validité des fichier d'environnement (dev et prod) 
+    await SecretManagerService.repairEnvFiles(targetDir);
+    console.log('Les fichiers .env.dev, .env.prod et vault-secrets.json ont été générés. Veuillez renseigner les valeurs nécessaires.');
 
     // Créer ou mettre à jour le dépôt Git.
     await GitService.handleRepository(targetDir, projectName);

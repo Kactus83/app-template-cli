@@ -11,7 +11,7 @@ import { ExtendedServiceConfig } from '../config/template-config.js';
 export class DeployService {
   static async deployAllServices(): Promise<void> {
     // Récupérer la liste des services configurés dans le template.
-    const services: ExtendedServiceConfig[] = await TemplateService.listServices();
+    const services: ExtendedServiceConfig[] = await TemplateService.listServices('prod');
 
     for (const service of services) {
       console.log(chalk.blue(`Déploiement du service : ${service.name} (order: ${service.order})`));
