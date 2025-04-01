@@ -1,12 +1,13 @@
-import { TemplateService } from '../services/template-service.js';
 import prompts from 'prompts';
 import chalk from 'chalk';
+import { TemplateConfigService } from '../services/template-config-service.js';
+import { ServiceConfigManager } from '../services/service-config-manager.js';
 
 
 export async function templateCommand(): Promise<void> {
   try {
     console.log(chalk.blue('=== Informations du Template ==='));
-    const templateConfig = await TemplateService.loadTemplateConfig();
+    const templateConfig = await TemplateConfigService.loadTemplateConfig();
     console.log(chalk.green('Nom:'), templateConfig.name);
     console.log(chalk.green('Version:'), templateConfig.version);
     console.log(chalk.green('Description:'), templateConfig.description);
@@ -29,7 +30,7 @@ export async function templateCommand(): Promise<void> {
       console.log(JSON.stringify(templateConfig, null, 2));
     } else if (response.choice === 'servicesList') {
       console.log(chalk.blue('\n=== Listing des Services (DEV) ==='));
-      const devServices = await TemplateService.listServices('dev');
+      const devServices = await ServiceConfigManager.listServices('dev');
       if (devServices.length === 0) {
         console.log(chalk.yellow('Aucun service trouvé.'));
       } else {
@@ -41,7 +42,7 @@ export async function templateCommand(): Promise<void> {
       }
 
       console.log(chalk.blue('\n=== Listing des Services (PROD) ==='));
-      const prodServices = await TemplateService.listServices('prod');
+      const prodServices = await ServiceConfigManager.listServices('prod');
       if (prodServices.length === 0) {
         console.log(chalk.yellow('Aucun service trouvé.'));
       } else {

@@ -1,9 +1,9 @@
 import prompts from 'prompts';
 import chalk from 'chalk';
 import { execSync } from 'child_process';
-import { TemplateService } from '../services/template-service.js';
 import { BuildService } from '../services/build-service.js';
 import { performGlobalClean, forcedDockerClean } from '../services/clean-service.js';
+import { TemplateConfigService } from '../services/template-config-service.js';
 
 /**
  * Commande interactive "dev-run" qui lance les conteneurs Docker en mode développement.
@@ -16,7 +16,7 @@ export async function devRunCommand(): Promise<void> {
   console.log(chalk.yellow('======================================'));
 
   // Récupération de la configuration du template (contenant notamment devRunCommand)
-  const templateConfig = await TemplateService.checkTemplateConfig();
+  const templateConfig = await TemplateConfigService.checkTemplateConfig();
 
   // Demander à l'utilisateur s'il souhaite builder à nouveau avant de lancer le dev run
   const buildResponse = await prompts({

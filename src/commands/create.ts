@@ -4,9 +4,9 @@ import prompts from 'prompts';
 import { FetchTemplateService, Template } from '../services/fetch-template-service.js';
 import { GitService } from '../services/git-service.js';
 import { ConfigService } from '../services/config-service.js';
-import { TemplateService } from '../services/template-service.js';
 import { SecretManagerService } from '../services/secret-manager-service.js';
 import { Credential, CredentialsService } from '../services/credentials-service.js';
+import { ServiceConfigManager } from '../services/service-config-manager.js';
 
 // Pour ESM, définir __dirname
 const __dirname = path.dirname(new URL(import.meta.url).pathname);
@@ -180,8 +180,8 @@ export async function createCommand(): Promise<void> {
     await FetchTemplateService.fetchTemplate(targetDir, chosenTemplate.url);
 
     // Vérifier la validité des configurations du template.
-    await TemplateService.checkAllConfigs('dev');
-    await TemplateService.checkAllConfigs('prod');
+    await ServiceConfigManager.checkAllConfigs('dev');
+    await ServiceConfigManager.checkAllConfigs('prod');
 
     // Vérifier la validité de la configuration du projet (cli)
     await ConfigService.ensureOrUpdateConfig(targetDir, projectName);

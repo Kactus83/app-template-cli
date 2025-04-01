@@ -1,8 +1,8 @@
 import fs from 'fs-extra';
 import path from 'path';
 import chalk from 'chalk';
-import { TemplateService, Environment } from './template-service.js';
-import { ExtendedServiceConfig } from '../config/template-config.js';
+import { Environment } from './docker-compose-service.js';
+import { ServiceConfigManager } from './service-config-manager.js';
 
 /**
  * Service de gestion des secrets.
@@ -19,7 +19,7 @@ export class SecretManagerService {
    * @returns Un Set contenant toutes les clés requises.
    */
   static async getAllSecretKeys(env: Environment): Promise<Set<string>> {
-    const services = await TemplateService.listServices(env);
+    const services = await ServiceConfigManager.listServices(env);
     const secretKeys = new Set<string>();
     for (const service of services) {
       if (Array.isArray(service.secrets)) {

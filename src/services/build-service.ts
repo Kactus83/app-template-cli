@@ -1,6 +1,6 @@
 import { execSync } from 'child_process';
 import chalk from 'chalk';
-import { TemplateService } from './template-service.js';
+import { TemplateConfigService } from './template-config-service.js';
 
 export class BuildService {
   /**
@@ -8,7 +8,7 @@ export class BuildService {
    */
   static async buildDev(): Promise<void> {
     // Récupération de la configuration du template
-    const templateConfig = await TemplateService.checkTemplateConfig();
+    const templateConfig = await TemplateConfigService.checkTemplateConfig();
     if (templateConfig.prebuildCommand) {
       console.log(chalk.blue(`Exécution du prébuild : ${templateConfig.prebuildCommand}`));
       try {
@@ -36,7 +36,7 @@ export class BuildService {
    */
   static async buildProd(): Promise<void> {
     // Récupération de la configuration du template
-    const templateConfig = await TemplateService.checkTemplateConfig();
+    const templateConfig = await TemplateConfigService.checkTemplateConfig();
     if (templateConfig.prebuildCommand) {
       console.log(chalk.blue(`Exécution du prébuild : ${templateConfig.prebuildCommand}`));
       try {

@@ -1,7 +1,7 @@
 import { execSync } from 'child_process';
 import chalk from 'chalk';
-import { TemplateService } from './template-service.js';
 import { ExtendedServiceConfig } from '../config/template-config.js';
+import { ServiceConfigManager } from './service-config-manager.js';
 
 /**
  * Service dédié au déploiement en production des services.
@@ -11,7 +11,7 @@ import { ExtendedServiceConfig } from '../config/template-config.js';
 export class DeployService {
   static async deployAllServices(): Promise<void> {
     // Récupérer la liste des services configurés dans le template.
-    const services: ExtendedServiceConfig[] = await TemplateService.listServices('prod');
+    const services: ExtendedServiceConfig[] = await ServiceConfigManager.listServices('prod');
 
     for (const service of services) {
       console.log(chalk.blue(`Déploiement du service : ${service.name} (order: ${service.order})`));
