@@ -136,4 +136,46 @@ export class SecretManagerService {
     await this.repairEnvFile(envDevPath, 'dev');
     await this.repairEnvFile(envProdPath, 'prod');
   }
+
+  /**
+   * Récupère les secrets de la base de données depuis le fichier .env.prod.
+   * Lève une erreur si l'une des clés nécessaires (POSTGRES_USER, POSTGRES_PASSWORD, DATABASE_URL) est absente.
+   */
+  static async getDbSecrets(targetDir: string): Promise<{
+    POSTGRES_USER: string;
+    POSTGRES_PASSWORD: string;
+    DATABASE_URL: string;
+  }> {
+    const envProdPath = path.join(targetDir, '.env.prod');
+    if (!(await fs.pathExists(envProdPath))) {
+      throw new Error(`Le fichier .env.prod est introuvable dans ${targetDir}`);
+    }
+    const content = await fs.readFile(envProdPath, 'utf8');
+    const lines = content.split(/\r?\n/);
+    let POSTGRES_USER: string | undefined;
+    let POSTGRES_PASSWORD: string | undefined;
+    let DATABASE_URL: string | undefined;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIndex = trimmed.indexOf('=');
+      if (eqIndex > -1) {
+        const key = trimmed.substring(0, eqIndex).trim();
+        const value = trimmed.substring(eqIndex + 1).trim();
+        if (key === 'POSTGRES_USER') {
+          POSTGRES_USER = value;
+        } else if (key === 'POSTGRES_PASSWORD') {
+          POSTGRES_PASSWORD = value;
+        } else if (key === 'DATABASE_URL') {
+          DATABASE_URL = value;
+        }
+      }
+    }
+    if (!POSTGRES_USER || !POSTGRES_PASSWORD || !DATABASE_URL) {
+      throw new Error("Les secrets de la base de données ne sont pas correctement renseignés dans .env.prod");
+    }
+    console.log(chalk.green("Secrets de la base de données récupérés avec succès."));
+    return { POSTGRES_USER, POSTGRES_PASSWORD, DATABASE_URL };
+  }
 }

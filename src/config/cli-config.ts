@@ -1,9 +1,33 @@
 /**
+ * Enum pour les providers (ex: "google_cloud", "aws", etc.).
+ */
+export enum Provider {
+  GOOGLE_CLOUD = "google_cloud",
+  AWS = "aws",
+}
+
+/**
+ * Enum pour le dégré de performance de l'infra (Tiers) 
+ */
+export enum InfraPerformance {
+  LOW = "low",
+  MEDIUM = "medium",
+  HIGH = "high",
+}
+
+/**
  * Interface pour la configuration du provider (ex: "google_cloud", "aws", etc.).
  */
 export interface ProviderConfig {
-  name: string;
+  name: Provider;
   artifactRegistry: string;
+  // Pour AWS
+  subnetId?: string;
+  securityGroups?: string[];
+  // Pour Google Cloud
+  region?: string;
+  zone?: string;
+  performance?: InfraPerformance;
 }
 
 /**
