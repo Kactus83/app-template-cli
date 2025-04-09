@@ -14,27 +14,32 @@ export async function generateTerraformVars(config: CliConfig): Promise<void> {
     if (!config.provider.zone) {
       throw new Error("Pour Google Cloud, la zone doit être renseignée dans la configuration CLI.");
     }
-    // Détermine le tier SQL selon le niveau de performance défini (default: LOW)
-    let sqlTier = "db-f1-micro";
+    // Adaptation du mapping des tiers pour PostgreSQL 16
+    // On utilise ici :
+    // - LOW    → "db-n1-standard-1"
+    // - MEDIUM → "db-n1-standard-2"
+    // - HIGH   → "db-n1-standard-4"
+    let sqlTier: string;
     switch (config.provider.performance) {
       case InfraPerformance.MEDIUM:
-        sqlTier = "db-g1-small";
+        sqlTier = "db-n1-standard-2";
         break;
       case InfraPerformance.HIGH:
-        sqlTier = "db-n1-standard-1";
+        sqlTier = "db-n1-standard-4";
         break;
       case InfraPerformance.LOW:
       default:
-        sqlTier = "db-f1-micro";
+        sqlTier = "db-n1-standard-1";
         break;
     }
     terraformVars = {
       project_id: config.projectName,
       region: config.provider.region,
       zone: config.provider.zone,
-      filestore_name: "filestore-sandbox",
+      filestore_name: "app_filestore",
       filestore_capacity_gb: 128,
       sql_instance_name: "app-database",
+      // On utilise POSTGRES_16 car c'est la version que vous utilisez en bac à sable entreprise
       sql_database_version: "POSTGRES_16",
       sql_tier: sqlTier,
       database_name: "app_database"
