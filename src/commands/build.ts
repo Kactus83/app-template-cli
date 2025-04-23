@@ -1,8 +1,9 @@
 import prompts from 'prompts';
 import chalk from 'chalk';
 import { BuildService } from '../services/build-service.js';
-import { performGlobalClean, forcedDockerClean } from '../services/clean-service.js';
+import { CleanService } from '../services/clean-service.js';
 import { SecretManagerService } from '../services/secret-manager-service.js';
+import { ConfigService } from '../services/config-service.js';
 
 /**
  * Commande interactive "build" qui propose plusieurs options de build.
@@ -42,7 +43,7 @@ export async function buildCommand(): Promise<void> {
   if (cleanResponse.option === 'clean') {
     console.log(chalk.blue('[Nettoyage standard]'));
     try {
-      await performGlobalClean();
+      await CleanService.performGlobalClean();
       console.log(chalk.green('Nettoyage standard terminé.'));
     } catch (error) {
       console.error(chalk.red('Erreur lors du nettoyage standard:'), error);
@@ -51,8 +52,7 @@ export async function buildCommand(): Promise<void> {
   } else if (cleanResponse.option === 'forcedClean') {
     console.log(chalk.blue('[Nettoyage complet]'));
     try {
-      await performGlobalClean();
-      forcedDockerClean();
+      CleanService.fullClean();
       console.log(chalk.green('Nettoyage complet terminé.'));
     } catch (error) {
       console.error(chalk.red('Erreur lors du nettoyage complet:'), error);
@@ -92,7 +92,21 @@ export async function buildCommand(): Promise<void> {
     console.log(chalk.blue('Lancement du build en mode développement...'));
     await BuildService.buildDev();
   } else if (envResponse.environment === 'prod') {
+
+    // Validation de la configuration
+    console.log(chalk.blue('Vérification de la configuration...'));
+    let cliConfig;
+
+    try {
+      cliConfig = await ConfigService.ensureOrPromptProviderConfig();
+      console.log(chalk.green('Configuration validée.'));
+    } catch (error) {
+      console.error(chalk.red('Erreur lors de la validation de la configuration:'), error);
+      return;
+    }
+
+    // Lancement du build en mode production
     console.log(chalk.blue('Lancement du build en mode production...'));
-    await BuildService.buildProd();
+    await BuildService.buildProd(cliConfig);
   }
 }

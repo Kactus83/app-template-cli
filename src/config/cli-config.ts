@@ -28,6 +28,30 @@ export interface ProviderConfig {
   region?: string;
   zone?: string;
   performance?: InfraPerformance;
+  // Propriétés pour la configuration du Filestore
+  filestoreExportPath?: string;
+  mountOptions?: string;
+}
+
+// Interface pour la configuration du provider Google Cloud.
+// Elle étend l'interface ProviderConfig pour rendre obligatoires les propriétés spécifiques à Google Cloud.
+export interface GoogleProviderConfig extends ProviderConfig {
+  region: string;
+  zone: string;
+  performance: InfraPerformance;
+  filestoreExportPath: string;
+  mountOptions: string;
+}
+
+// Interface pour la configuration du provider AWS.
+// Elle étend l'interface ProviderConfig pour rendre obligatoires les propriétés spécifiques à AWS.
+export interface AWSProviderConfig extends ProviderConfig {
+  subnetId: string;
+  securityGroups: string[];
+  filestoreExportPath: string;
+  mountOptions: string;
+  computeKeyName: string;
+  computePublicKeyPath: string;
 }
 
 /**
@@ -49,6 +73,22 @@ export interface CliConfig {
   provider?: ProviderConfig;
   buildOptions: BuildOptions;
   pathToSSHKey?: string;
+}
+
+/**
+ * Interface de configuration pour le provider Google Cloud.
+ * Elle étend l'interface CliConfig pour inclure la configuration spécifique au provider Google Cloud.
+ */
+export interface GoogleCliConfig extends CliConfig {
+  provider: GoogleProviderConfig;
+}
+
+/**
+ * Interface de configuration pour le provider AWS.
+ * Elle étend l'interface CliConfig pour inclure la configuration spécifique au provider AWS.
+ */
+export interface AWSCliConfig extends CliConfig {
+  provider: AWSProviderConfig;
 }
 
 /**

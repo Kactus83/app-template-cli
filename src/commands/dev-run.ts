@@ -2,8 +2,8 @@ import prompts from 'prompts';
 import chalk from 'chalk';
 import { execSync } from 'child_process';
 import { BuildService } from '../services/build-service.js';
-import { performGlobalClean, forcedDockerClean } from '../services/clean-service.js';
 import { TemplateConfigService } from '../services/template-config-service.js';
+import { CleanService } from '../services/clean-service.js';
 
 /**
  * Commande interactive "dev-run" qui lance les conteneurs Docker en mode développement.
@@ -49,7 +49,7 @@ export async function devRunCommand(): Promise<void> {
       if (cleanTypeResponse.cleanType === 'light') {
         console.log(chalk.blue('Exécution d\'un nettoyage standard...'));
         try {
-          await performGlobalClean();
+          await CleanService.performGlobalClean();
           console.log(chalk.green('Nettoyage standard terminé.'));
         } catch (error) {
           console.error(chalk.red('Erreur lors du nettoyage standard :'), error);
@@ -58,8 +58,7 @@ export async function devRunCommand(): Promise<void> {
       } else if (cleanTypeResponse.cleanType === 'integral') {
         console.log(chalk.blue('Exécution d\'un nettoyage complet...'));
         try {
-          await performGlobalClean();
-          forcedDockerClean();
+          await CleanService.fullClean();
           console.log(chalk.green('Nettoyage complet terminé.'));
         } catch (error) {
           console.error(chalk.red('Erreur lors du nettoyage complet :'), error);

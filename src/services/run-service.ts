@@ -1,47 +1,84 @@
 import { execSync } from 'child_process';
 import chalk from 'chalk';
-import { DockerComposeService, Environment } from './docker-compose-service.js';
+import fs from 'fs-extra';
+import path from 'path';
 import { ServiceConfigManager } from './service-config-manager.js';
 import { ExtendedServiceConfig } from '../config/template-config.js';
 
-/**
- * Service pour lancer les containers un par un en production.
- * Ce service exécute les containers dans l'ordre défini et vérifie leur état via les healthchecks.
- * Les fonctionnalités supplémentaires (intégration avec Vault, gestion fine des logs, etc.) pourront être ajoutées ultérieurement.
- */
 export class RunService {
   /**
-   * Exécute les containers définis dans le docker-compose dans l'ordre.
-   * Pour chaque service, lance le container et attend (simulé ici) que le service soit healthy.
-   *
-   * @param env Environnement ('dev' ou 'prod').
+   * Démarre les containers en production, **sur la VM** provisionnée.
+   * Il :
+   * 1) lit ./prod-deployments/infra/[provider]/compute.json pour récupérer publicIp, sshUser et sshKeyPath
+   * 2) envoie le docker-compose.prod.yml sur la VM via scp
+   * 3) pour chaque service, lance `docker-compose up -d` par ssh
+   * 4) exécute, si défini, le healthCheck à distance (timeout = 60s)
    */
-  static async runContainers(env: Environment): Promise<void> {
-    console.log(chalk.blue(`Démarrage de l'exécution des containers en ${env}...`));
+  static async runContainers(env: 'prod' = 'prod'): Promise<void> {
+    console.log(chalk.blue(`Démarrage des containers en "${env}" sur la VM…`));
 
-    // Récupérer la liste ordonnée des services via ServiceConfigManager
-    const services: ExtendedServiceConfig[] = await ServiceConfigManager.listServices(env);
+    // 1️⃣ Récupère compute.json
+    const infraRoot = path.join(process.cwd(), 'prod-deployments', 'infra');
+    const providerDirs = await fs.readdir(infraRoot);
+    let computeJsonPath: string | undefined;
+    for (const dir of providerDirs) {
+      const p = path.join(infraRoot, dir, 'compute.json');
+      if (await fs.pathExists(p)) { computeJsonPath = p; break; }
+    }
+    if (!computeJsonPath) {
+      throw new Error('Aucun compute.json trouvé sous prod-deployments/infra/*');
+    }
+    const { publicIp, sshUser, sshKeyPath } = JSON.parse(
+      await fs.readFile(computeJsonPath, 'utf8')
+    );
+    console.log(chalk.green(`✓ VM détectée : ${sshUser}@${publicIp}`));
 
-    // Lancer les containers dans l'ordre
-    for (const service of services) {
-      console.log(chalk.blue(`Lancement du service ${service.name}...`));
-      try {
-        // Lancer le container pour le service via docker-compose
-        // On suppose que docker-compose est configuré pour lancer un service spécifique
-        execSync(`docker-compose up -d ${service.name}`, { stdio: 'inherit' });
-        
-        // TODO: Implémenter une vérification du healthcheck du service.
-        // Par exemple, une boucle d'attente avec timeout interrogeant l'endpoint du healthcheck.
-        console.log(chalk.blue(`Attente de la disponibilité du service ${service.name}...`));
-        execSync(`sleep 5`, { stdio: 'inherit' });
-        
-        console.log(chalk.green(`Service ${service.name} lancé avec succès.`));
-      } catch (error) {
-        console.error(chalk.red(`Erreur lors du lancement du service ${service.name}:`), error);
-        throw error;
+    // 2️⃣ Transfert du compose file
+    const localCompose = `docker-compose.${env}.yml`;
+    const remoteCompose = `~/docker-compose.${env}.yml`;
+    console.log(chalk.blue(`→ Transfert de ${localCompose} vers la VM…`));
+    execSync(
+      `scp -i ${sshKeyPath} ${localCompose} ${sshUser}@${publicIp}:${remoteCompose}`,
+      { stdio: 'inherit' }
+    );
+
+    // 3️⃣ Récupère la liste des services à lancer
+    let services: ExtendedServiceConfig[];
+    try {
+      services = await ServiceConfigManager.listServices(env);
+      if (services.length === 0) {
+        throw new Error('Aucun service configuré à lancer en prod');
       }
+    } catch (err) {
+      console.error(chalk.red('✖ Impossible de lister les services :'), err);
+      throw err;
     }
 
-    console.log(chalk.green(`Tous les services ont été lancés.`));
+    // 4️⃣ Pour chaque service, on lance docker-compose dans la VM
+    for (const svc of services) {
+      console.log(chalk.blue(`\nLancement du service : ${svc.name} (order: ${svc.order})…`));
+      const upCmd = `docker-compose -f ${remoteCompose} up -d ${svc.name}`;
+      execSync(
+        `ssh -i ${sshKeyPath} ${sshUser}@${publicIp} "${upCmd}"`,
+        { stdio: 'inherit' }
+      );
+
+      // 5️⃣ Healthcheck distant (timeout 60s)
+      if (svc.healthCheck) {
+        console.log(chalk.blue(`→ Healthcheck de ${svc.name} (60s)…`));
+        try {
+          execSync(
+            `ssh -i ${sshKeyPath} ${sshUser}@${publicIp} "${svc.healthCheck}"`,
+            { stdio: 'inherit', timeout: 60_000 }
+          );
+        } catch {
+          console.warn(chalk.yellow(`⚠ Healthcheck pour ${svc.name} a échoué ou timeout, on poursuit.`));
+        }
+      }
+
+      console.log(chalk.green(`✓ Service ${svc.name} lancé.`));
+    }
+
+    console.log(chalk.green('\nTous les services ont été lancés sur la VM avec succès.'));
   }
 }

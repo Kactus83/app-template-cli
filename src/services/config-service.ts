@@ -1,14 +1,11 @@
 import fs from 'fs-extra';
 import * as path from 'path';
-import { CliConfig, defaultCliConfig, Provider, ProviderConfig, InfraPerformance } from '../config/cli-config.js';
+import { CliConfig, defaultCliConfig, Provider, ProviderConfig, AWSProviderConfig, GoogleProviderConfig, GoogleCliConfig, AWSCliConfig } from '../config/cli-config.js';
+import { CommonConfig, promptCommonProviderConfig } from '../utils/providers-config-utils.js';
+import { promptAWSConfig } from '../utils/aws-config-utils.js';
+import { promptGoogleConfig } from '../utils/google-config-utils.js';
+import chalk from 'chalk';
 import prompts from 'prompts';
-import {
-  correctRegionInput,
-  validateZoneInput,
-  suggestZonesForRegion,
-  isValidRegion,
-  GOOGLE_CLOUD_REGIONS
-} from '../utils/google-naming-utils.js';
 
 export class ConfigService {
   /**
@@ -70,135 +67,118 @@ export class ConfigService {
   }
 
   /**
-   * Vérifie que la configuration contient un provider.
-   * Si le fichier n'existe pas ou si le provider est manquant, demande à l'utilisateur de renseigner ces informations et sauvegarde la configuration.
-   * Cette fonction est conçue pour être appelée lors du déploiement.
-   * @param targetDir Répertoire cible (par défaut le dossier courant).
-   * @returns La configuration CLI complétée.
+   * Assure que la configuration CLI possède une section provider complète.
+   * Si des informations sont manquantes, l'utilisateur est guidé interactivement pour renseigner les données nécessaires.
+   *
+   * Le retour est typé de sorte que la configuration retournée est garantie d'avoir une propriété provider
+   * conforme à l'une des interfaces spécifiques (GoogleProviderConfig ou AWSProviderConfig).
+   *
+   * @param targetDir Répertoire cible (par défaut process.cwd())
+   * @returns La configuration complétée, de type 
+   *   (CliConfig & { provider: GoogleProviderConfig }) | (CliConfig & { provider: AWSProviderConfig })
    */
-  static async ensureOrPromptConfig(targetDir: string = process.cwd()): Promise<CliConfig> {
-    const configPath = ConfigService.getConfigPath(targetDir);
+  static async ensureOrPromptProviderConfig(
+    targetDir: string = process.cwd()
+  ): Promise<GoogleCliConfig | AWSCliConfig> {
+    const configPath = this.getConfigPath(targetDir);
     let config: CliConfig;
+
+    // --- 1) Charger ou créer la config ---
     if (await fs.pathExists(configPath)) {
       try {
-        const fileData = await fs.readFile(configPath, 'utf8');
-        config = JSON.parse(fileData) as CliConfig;
-      } catch (error) {
-        throw new Error(`Erreur lors de la lecture de la configuration existante: ${error}`);
+        config = JSON.parse(await fs.readFile(configPath, 'utf8'));
+      } catch (e: any) {
+        throw new Error(`Impossible de lire la config existante : ${e.message}`);
       }
     } else {
       config = { ...defaultCliConfig };
-      console.log(`Aucune configuration trouvée. Utilisation de la configuration par défaut.`);
+      console.log(chalk.yellow('Aucune config trouvée, valeurs par défaut utilisées.'));
     }
 
-    // Si le provider est manquant ou incomplet, on demande à l'utilisateur de le renseigner.
-    if (!config.provider || !config.provider.name || !config.provider.artifactRegistry) {
-      console.log(`La configuration du provider est manquante ou incomplète. Veuillez la renseigner :`);
-      const responses = await prompts([
-        {
-          type: 'select',
-          name: 'providerName',
-          message: 'Sélectionnez votre provider:',
-          choices: [
-            { title: 'Google Cloud', value: Provider.GOOGLE_CLOUD },
-            { title: 'AWS', value: Provider.AWS },
-          ]
-        },
-        {
-          type: 'text',
-          name: 'artifactRegistry',
-          message: 'Entrez l\'URL ou l\'identifiant de votre registry d\'artifacts:',
-          validate: value => (value && value.trim().length > 0 ? true : 'Cette valeur ne peut être vide.')
-        }
-      ]);
+    // 2) Déterminer si le provider actuel est complet
+    const p = config.provider as Partial<ProviderConfig> | undefined;
+    const isGoogle = p?.name === Provider.GOOGLE_CLOUD;
+    const isAWS    = p?.name === Provider.AWS;
+    const googleOk = isGoogle
+      && !!(p as GoogleProviderConfig).artifactRegistry
+      && !!(p as GoogleProviderConfig).performance
+      && !!(p as GoogleProviderConfig).region
+      && !!(p as GoogleProviderConfig).zone
+      && !!(p as GoogleProviderConfig).filestoreExportPath
+      && !!(p as GoogleProviderConfig).mountOptions;
+    const awsOk = isAWS
+      && !!(p as AWSProviderConfig).artifactRegistry
+      && !!(p as AWSProviderConfig).performance
+      && !!(p as AWSProviderConfig).subnetId
+      && Array.isArray((p as AWSProviderConfig).securityGroups)
+      && (p as AWSProviderConfig).securityGroups!.length > 0
+      && !!(p as AWSProviderConfig).filestoreExportPath
+      && !!(p as AWSProviderConfig).mountOptions;
+    const complete = (isGoogle && googleOk) || (isAWS && awsOk);
 
-      let additional: Partial<ProviderConfig> = {};
-      if (responses.providerName === Provider.GOOGLE_CLOUD) {
-        const regionResp = await prompts({
-          type: 'text',
-          name: 'region',
-          message: 'Entrez la région Google Cloud (ex: us-central1):',
-          validate: value => {
-            const corrected = correctRegionInput(value);
-            return isValidRegion(corrected) ? true : `Valeur invalide. Choix possibles: ${GOOGLE_CLOUD_REGIONS.join(', ')}`;
-          }
-        });
-        additional.region = regionResp.region;
-
-        const zoneResp = await prompts({
-          type: 'text',
-          name: 'zone',
-          message: 'Entrez la zone pour Filestore (ex: us-central1-a):',
-          validate: value => {
-            const validZone = validateZoneInput(value);
-            if (validZone) {
-              return true;
-            } else {
-              const suggestions = additional.region ? suggestZonesForRegion(additional.region) : [];
-              return suggestions.length ? `Valeur invalide. Choisissez parmi: ${suggestions.join(', ')}` : 'Valeur invalide.';
-            }
-          }
-        });
-        additional.zone = zoneResp.zone;
-      } else if (responses.providerName === Provider.AWS) {
-        const awsResp = await prompts([
-          {
-            type: 'text',
-            name: 'subnetId',
-            message: 'Entrez l\'ID du subnet pour AWS:',
-            validate: value => (value && value.trim().length > 0 ? true : 'Cette valeur ne peut être vide.')
-          },
-          {
-            type: 'list',
-            name: 'securityGroups',
-            message: 'Entrez les IDs des groupes de sécurité pour AWS (séparés par une virgule):',
-            separator: ',',
-            validate: value => (value && value.length > 0 ? true : 'Veuillez fournir au moins un groupe de sécurité.')
-          }
-        ]);
-        additional.subnetId = awsResp.subnetId;
-        additional.securityGroups = awsResp.securityGroups;
-      }
-      // Demande le niveau de performance pour tous les providers
-      const perfResp = await prompts({
-        type: 'select',
-        name: 'performance',
-        message: 'Sélectionnez le niveau de performance pour votre infrastructure:',
-        choices: [
-          { title: 'Low', value: InfraPerformance.LOW },
-          { title: 'Medium', value: InfraPerformance.MEDIUM },
-          { title: 'High', value: InfraPerformance.HIGH }
-        ]
+    // 3) Si complet, proposer de passer en revue
+    if (complete) {
+      console.log(chalk.green('✅ Configuration du provider déjà complète.'));
+      const { review } = await prompts({
+        type: 'confirm',
+        name: 'review',
+        message: 'Voulez-vous la passer en revue ?',
+        initial: false
       });
-      additional.performance = perfResp.performance;
-
-      const providerConfig: ProviderConfig = {
-        name: responses.providerName,
-        artifactRegistry: responses.artifactRegistry,
-        ...additional
-      };
-      config.provider = providerConfig;
-      await fs.writeFile(configPath, JSON.stringify(config, null, 2));
-      console.log(`Configuration mise à jour avec succès dans ${configPath}`);
-    } else {
-      console.log(`Configuration du provider déjà renseignée.`);
-      // Même si la configuration existe, on vérifie que le niveau de performance est défini.
-      if (!config.provider.performance) {
-        const perfResp = await prompts({
-          type: 'select',
-          name: 'performance',
-          message: 'Sélectionnez le niveau de performance pour votre infrastructure:',
-          choices: [
-            { title: 'Low', value: InfraPerformance.LOW },
-            { title: 'Medium', value: InfraPerformance.MEDIUM },
-            { title: 'High', value: InfraPerformance.HIGH }
-          ]
-        });
-        config.provider.performance = perfResp.performance;
-        await fs.writeFile(configPath, JSON.stringify(config, null, 2));
-        console.log(`Configuration mise à jour avec le niveau de performance dans ${configPath}`);
+      if (!review) {
+        // On retourne tel quel, typé
+        return (isGoogle
+          ? (config as GoogleCliConfig)
+          : (config as AWSCliConfig)
+        );
       }
     }
-    return config;
+
+    // 4) Sinon (ou si review), on reconstruit tout en reprenant existant
+    const existingCommon: CommonConfig = {
+      providerName: config.provider?.name,
+      artifactRegistry: config.provider?.artifactRegistry,
+      performance: config.provider?.performance,
+    };
+    const common = await promptCommonProviderConfig(existingCommon);
+
+    let finalProvider: ProviderConfig;
+    if (common.providerName === Provider.GOOGLE_CLOUD) {
+      const base = config.provider as Partial<GoogleProviderConfig> || {};
+      base.name = Provider.GOOGLE_CLOUD;
+      base.artifactRegistry = common.artifactRegistry;
+      base.performance = common.performance;
+      const spec = await promptGoogleConfig(base);
+      finalProvider = {
+        ...base,
+        region: spec.region,
+        zone: spec.zone,
+        filestoreExportPath: spec.filestoreExportPath,
+        mountOptions: spec.mountOptions
+      } as GoogleProviderConfig;
+    } else {
+      const base = config.provider as Partial<AWSProviderConfig> || {};
+      base.name = Provider.AWS;
+      base.artifactRegistry = common.artifactRegistry;
+      base.performance = common.performance;
+      const spec = await promptAWSConfig(base);
+      finalProvider = {
+        ...base,
+        subnetId: spec.subnetId,
+        securityGroups: spec.securityGroups,
+        filestoreExportPath: spec.filestoreExportPath,
+        mountOptions: spec.mountOptions
+      } as AWSProviderConfig;
+    }
+
+    // 5) Écrire la config finale
+    config.provider = finalProvider;
+    await fs.writeFile(configPath, JSON.stringify(config, null, 2));
+    console.log(chalk.green(`🔒 Configuration enregistrée dans ${configPath}`));
+
+    // 6) Retourner typé
+    return finalProvider.name === Provider.GOOGLE_CLOUD
+      ? (config as GoogleCliConfig)
+      : (config as AWSCliConfig);
   }
-}
+}  

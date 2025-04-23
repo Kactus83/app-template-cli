@@ -4,6 +4,16 @@ import https from 'https';
 import { ExtendedServiceConfig } from '../config/template-config.js';
 import { ProviderConfig } from '../config/cli-config.js';
 
+function checkLocalImage(imageTag: string): boolean {
+  try {
+    const result = execSync(`docker images -q ${imageTag}`, { encoding: "utf8" }).trim();
+    return result.length > 0;
+  } catch (error) {
+    console.error("Erreur lors de la vérification de l'image locale:", error);
+    return false;
+  }
+}
+
 export class ImagePushService {
   /**
    * Vérifie si le registry est accessible en effectuant une requête GET sur l'endpoint /v2/.
@@ -57,6 +67,13 @@ export class ImagePushService {
   ): Promise<void> {
     // Vérifier l'accessibilité du registry
     const accessible = await ImagePushService.checkRegistryAccessible(provider);
+
+    // Verifier si l'image existe localement
+    if (!checkLocalImage(`${provider.artifactRegistry}/${service.name}:${tag}`)) {
+      console.error(`L'image ${provider.artifactRegistry}/${service.name}:${tag} n'existe pas localement.`);
+      throw new Error("Image non trouvée pour le push");
+    }
+
     if (!accessible) {
       console.error(
         chalk.red(`Le registry ${provider.artifactRegistry} n'est pas accessible. Abandon du push pour ${service.name}.`)

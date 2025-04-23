@@ -1,6 +1,6 @@
 import prompts from 'prompts';
 import chalk from 'chalk';
-import { performGlobalClean, forcedDockerClean } from '../services/clean-service.js';
+import { CleanService } from '../services/clean-service.js';
 
 /**
  * Commande interactive "clean" qui permet de nettoyer l'environnement.
@@ -36,7 +36,8 @@ export async function cleanCommand(): Promise<void> {
     case 'normal':
       console.log(chalk.blue('[Clean normal]'));
       try {
-        await performGlobalClean();
+        console.log(chalk.yellow('Nettoyage normal en cours...'));
+        await CleanService.performGlobalClean();
         console.log(chalk.green('Nettoyage normal terminé.'));
       } catch (error) {
         console.error(chalk.red('Erreur lors du nettoyage normal:'), error);
@@ -45,12 +46,16 @@ export async function cleanCommand(): Promise<void> {
     case 'forced':
       console.log(chalk.blue('[Clean forcé]'));
       try {
-        await performGlobalClean();
+        console.log(chalk.yellow('Nettoyage normal en cours...'));
+        await CleanService.performGlobalClean();
+        console.log(chalk.green('Nettoyage normal terminé.'));
       } catch (error) {
         console.error(chalk.red('Erreur lors du nettoyage normal:'), error);
       }
       try {
-        forcedDockerClean();
+        console.log(chalk.yellow('Nettoyage forcé Docker en cours...'));
+        await CleanService.forcedDockerClean();
+        console.log(chalk.green('Nettoyage forcé Docker terminé.'));
       } catch (error) {
         console.error(chalk.red('Erreur lors du nettoyage forcé Docker:'), error);
       }
