@@ -66,6 +66,7 @@ export interface ComputeInfraData {
   publicIp   : string;
   sshUser    : string;
   sshKeyPath : string;
+  instanceName : string;
 }
 
 /** Gestion du module Compute (VM Linux) */

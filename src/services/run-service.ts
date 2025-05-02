@@ -1,84 +1,103 @@
-import { execSync } from 'child_process';
+import { spawnSync, SpawnSyncReturns } from 'child_process';
 import chalk from 'chalk';
 import fs from 'fs-extra';
 import path from 'path';
-import { ServiceConfigManager } from './service-config-manager.js';
-import { ExtendedServiceConfig } from '../config/template-config.js';
+import { GoogleCliConfig, AWSCliConfig, Provider } from '../config/cli-config.js';
+import { ComputeInfraData } from './cloud/types.js';
 
+/**
+ * Service pour démarrer les containers Docker en production
+ * sur une VM distante (Google Compute Engine ou AWS EC2).
+ */
 export class RunService {
   /**
-   * Démarre les containers en production, **sur la VM** provisionnée.
-   * Il :
-   * 1) lit ./prod-deployments/infra/[provider]/compute.json pour récupérer publicIp, sshUser et sshKeyPath
-   * 2) envoie le docker-compose.prod.yml sur la VM via scp
-   * 3) pour chaque service, lance `docker-compose up -d` par ssh
-   * 4) exécute, si défini, le healthCheck à distance (timeout = 60s)
+   * Copie le fichier docker-compose.<env>.yml sur la VM et lance `docker-compose up -d`.
+   *
+   * @param env       Nom de l’environnement (‘prod’)
+   * @param cliConfig Configuration CLI (GoogleCliConfig ou AWSCliConfig)
+   * @param compute   Données de la VM (ComputeInfraData)
    */
-  static async runContainers(env: 'prod' = 'prod'): Promise<void> {
-    console.log(chalk.blue(`Démarrage des containers en "${env}" sur la VM…`));
+  static async runContainers(
+    env: 'prod',
+    cliConfig: GoogleCliConfig | AWSCliConfig,
+    compute: ComputeInfraData
+  ): Promise<void> {
+    console.log(chalk.blue(`Démarrage des containers "${env}" sur la VM…`));
 
-    // 1️⃣ Récupère compute.json
-    const infraRoot = path.join(process.cwd(), 'prod-deployments', 'infra');
-    const providerDirs = await fs.readdir(infraRoot);
-    let computeJsonPath: string | undefined;
-    for (const dir of providerDirs) {
-      const p = path.join(infraRoot, dir, 'compute.json');
-      if (await fs.pathExists(p)) { computeJsonPath = p; break; }
-    }
-    if (!computeJsonPath) {
-      throw new Error('Aucun compute.json trouvé sous prod-deployments/infra/*');
-    }
-    const { publicIp, sshUser, sshKeyPath } = JSON.parse(
-      await fs.readFile(computeJsonPath, 'utf8')
-    );
-    console.log(chalk.green(`✓ VM détectée : ${sshUser}@${publicIp}`));
-
-    // 2️⃣ Transfert du compose file
-    const localCompose = `docker-compose.${env}.yml`;
-    const remoteCompose = `~/docker-compose.${env}.yml`;
-    console.log(chalk.blue(`→ Transfert de ${localCompose} vers la VM…`));
-    execSync(
-      `scp -i ${sshKeyPath} ${localCompose} ${sshUser}@${publicIp}:${remoteCompose}`,
-      { stdio: 'inherit' }
-    );
-
-    // 3️⃣ Récupère la liste des services à lancer
-    let services: ExtendedServiceConfig[];
-    try {
-      services = await ServiceConfigManager.listServices(env);
-      if (services.length === 0) {
-        throw new Error('Aucun service configuré à lancer en prod');
-      }
-    } catch (err) {
-      console.error(chalk.red('✖ Impossible de lister les services :'), err);
-      throw err;
+    // 1) chemin local du compose
+    const composeFile = `docker-compose.${env}.yml`;
+    const localComposePath = path.join(process.cwd(), composeFile);
+    if (!(await fs.pathExists(localComposePath))) {
+      throw new Error(`Fichier introuvable : ${localComposePath}`);
     }
 
-    // 4️⃣ Pour chaque service, on lance docker-compose dans la VM
-    for (const svc of services) {
-      console.log(chalk.blue(`\nLancement du service : ${svc.name} (order: ${svc.order})…`));
-      const upCmd = `docker-compose -f ${remoteCompose} up -d ${svc.name}`;
-      execSync(
-        `ssh -i ${sshKeyPath} ${sshUser}@${publicIp} "${upCmd}"`,
-        { stdio: 'inherit' }
-      );
+    const providerName = cliConfig.provider.name;
+    const { publicIp, sshUser, sshKeyPath, instanceName } = compute;
 
-      // 5️⃣ Healthcheck distant (timeout 60s)
-      if (svc.healthCheck) {
-        console.log(chalk.blue(`→ Healthcheck de ${svc.name} (60s)…`));
-        try {
-          execSync(
-            `ssh -i ${sshKeyPath} ${sshUser}@${publicIp} "${svc.healthCheck}"`,
-            { stdio: 'inherit', timeout: 60_000 }
-          );
-        } catch {
-          console.warn(chalk.yellow(`⚠ Healthcheck pour ${svc.name} a échoué ou timeout, on poursuit.`));
-        }
-      }
+    // 2) selon le provider
+    if (providerName === Provider.GOOGLE_CLOUD) {
+      const gcfg = cliConfig as GoogleCliConfig;
+      console.log(chalk.green(`✓ VM GCP détectée : ${instanceName}@${publicIp}`));
 
-      console.log(chalk.green(`✓ Service ${svc.name} lancé.`));
+      // 2.a) scp via gcloud
+      this._execOrThrow(spawnSync('gcloud', [
+        'compute', 'scp',
+        '--project', gcfg.projectName,
+        '--zone', gcfg.provider.zone,
+        localComposePath,
+        `${instanceName}:~/${composeFile}`
+      ], { stdio: 'inherit' }), 'Échec de la copie du docker-compose sur la VM GCP');
+
+      // 2.b) ssh + docker-compose up
+      this._execOrThrow(spawnSync('gcloud', [
+        'compute', 'ssh', instanceName,
+        '--project', gcfg.projectName,
+        '--zone', gcfg.provider.zone,
+        '--command', `docker-compose -f ~/${composeFile} up -d`
+      ], { stdio: 'inherit' }), 'Échec du lancement des containers sur la VM GCP');
+
+    } else if (providerName === Provider.AWS) {
+      console.log(chalk.green(`✓ VM AWS détectée : ${sshUser}@${publicIp}`));
+
+      const sshOpts = [
+        '-o', 'StrictHostKeyChecking=no',
+        '-o', 'UserKnownHostsFile=/dev/null',
+        '-i', sshKeyPath
+      ];
+
+      // 2.a) scp
+      this._execOrThrow(spawnSync('scp', [
+        ...sshOpts,
+        localComposePath,
+        `${sshUser}@${publicIp}:~/${composeFile}`
+      ], { stdio: 'inherit' }), 'Échec de la copie du docker-compose sur la VM AWS');
+
+      // 2.b) ssh + docker-compose up
+      this._execOrThrow(spawnSync('ssh', [
+        ...sshOpts,
+        `${sshUser}@${publicIp}`,
+        `docker-compose -f ~/${composeFile} up -d`
+      ], { stdio: 'inherit' }), 'Échec du lancement des containers sur la VM AWS');
+
+    } else {
+      throw new Error(`Provider non supporté pour le run : ${providerName}`);
     }
 
-    console.log(chalk.green('\nTous les services ont été lancés sur la VM avec succès.'));
+    console.log(chalk.green('\n✓ Tous les containers ont été lancés sur la VM.'));
+  }
+
+  /**
+   * Vérifie le code de sortie d'une commande spawnSync et lève une erreur si non nul.
+   *
+   * @param res    Résultat de spawnSync
+   * @param errMsg Message d’erreur à afficher/lever si échec
+   */
+  private static _execOrThrow(res: SpawnSyncReturns<any>, errMsg: string) {
+    if (res.error) {
+      throw new Error(`${errMsg} : ${res.error.message}`);
+    }
+    if (res.status !== 0) {
+      throw new Error(`${errMsg} (status ${res.status})`);
+    }
   }
 }

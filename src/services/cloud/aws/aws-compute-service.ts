@@ -5,9 +5,6 @@ import chalk from "chalk";
 import { AWSCliConfig, Provider } from "../../../config/cli-config.js";
 import { IComputeService, ComputeInfraData, StorageInfraData } from "../types.js";
 
-/**
- * Service de provisionnement de la VM sur AWS EC2.
- */
 export class AwsComputeService implements IComputeService {
   private readonly cfg: AWSCliConfig;
   private readonly moduleDir: string;
@@ -22,30 +19,24 @@ export class AwsComputeService implements IComputeService {
     this.tfvarsPath = path.join(this.moduleDir, "terraform.tfvars.json");
   }
 
-  /**
-   * 1️⃣ Génération du tfvars pour EC2
-   * Lit l’IP du mount target EFS depuis storage.json pour qu’on ne
-   * perde pas l’automatisation et ne duplique pas la config.
-   */
+  /** 1️⃣ Génération du tfvars pour EC2 (toujours appelée) */
   async generateTerraformConfig(): Promise<void> {
-    // on récupère l’IP du mount cible depuis storage.json
     const infraDir    = path.join(process.cwd(), "prod-deployments", "infra", "aws");
-    const storageJson = (await fs.readJson(
-      path.join(infraDir, "storage.json")
-    )) as StorageInfraData;
-
+    const storageJson = await fs.readJson(path.join(infraDir, "storage.json")) as StorageInfraData;
     if (!storageJson.efsMountTargetIp) {
       throw new Error("Impossible de lire efsMountTargetIp depuis storage.json");
     }
 
     const p = this.cfg.provider;
     const tfvars = {
-        region                 : p.region,
-        compute_key_name       : p.computeKeyName,
-        compute_public_key_path: p.computePublicKeyPath,
-        subnet_id              : p.subnetId,
-        security_groups        : p.securityGroups,
-        efs_mount_target_ip : storageJson.efsMountTargetIp
+      region                   : p.region,
+      compute_key_name         : p.computeKeyName,
+      compute_public_key_path  : p.computePublicKeyPath,
+      subnet_id                : p.subnetId,
+      security_groups          : p.securityGroups,
+      efs_mount_target_ip      : storageJson.efsMountTargetIp,
+      filestore_export_path    : p.filestoreExportPath,
+      mount_point              : p.mountOptions.split(",")[0]  // ou votre logique de mount
     };
 
     await fs.ensureDir(this.moduleDir);
@@ -53,14 +44,15 @@ export class AwsComputeService implements IComputeService {
     console.log(chalk.green(`✓ tfvars générés pour Compute AWS: ${this.tfvarsPath}`));
   }
 
-  /** 2️⃣ Vérifie l’existence de l’instance EC2 via AWS CLI */
+  /** 2️⃣ Vérifie l’existence de l’instance EC2 (AWS CLI) */
   async checkInfra(): Promise<boolean> {
     const res = spawnSync(
       "aws",
       [
         "ec2", "describe-instances",
         "--filters", "Name=tag:Name,Values=app-vm",
-        "--region", this.cfg.provider.region || (() => { throw new Error("Region is undefined in AWS provider configuration"); })()
+        "--region", this.cfg.provider.region!,
+        "--output", "text"
       ],
       { stdio: "ignore" }
     );
@@ -72,33 +64,39 @@ export class AwsComputeService implements IComputeService {
     return ok;
   }
 
-  /** 3️⃣ Provisionne EC2 + récupère l’IP publique */
+  /** 3️⃣ Provisionne EC2 + récupère l’IP publique et le nom */
   async deployAndFetchData(): Promise<ComputeInfraData> {
     console.log(chalk.yellow("▶ Provisionnement AWS EC2…"));
-    for (const args of [["init"], ["apply", "-auto-approve"]]) {
-      const res = spawnSync("terraform", args, {
-        cwd: this.moduleDir,
-        stdio: "inherit"
-      });
-      if (res.status !== 0) {
-        throw new Error(`Terraform ${args[0]} a échoué`);
-      }
-    }
+    const cwd = this.moduleDir;
 
-    // lit le output Terraform
+    // ── Terraform init ── (non interactif)
+    let res = spawnSync("terraform", ["init", "-input=false"], { cwd, stdio: "inherit" });
+    if (res.status !== 0) throw new Error("Terraform init a échoué");
+
+    // ── Terraform apply ── (non interactif, var-file)
+    res = spawnSync("terraform", [
+      "apply",
+      "-auto-approve",
+      "-input=false",
+      `-var-file=${path.basename(this.tfvarsPath)}`
+    ], { cwd, stdio: "inherit" });
+    if (res.status !== 0) throw new Error("Terraform apply a échoué");
+
+    // ── Lire les outputs ──
     const out = spawnSync("terraform", ["output", "-json"], {
-      cwd: this.moduleDir,
-      stdio: ["ignore", "pipe", "inherit"]
+      cwd, stdio: ["ignore","pipe","inherit"]
     }).stdout!.toString();
-    const json = JSON.parse(out);
-    const ip   = json.public_ip.value as string;
-    console.log(chalk.green(`✓ EC2 prête à ${ip}`));
+    const json     = JSON.parse(out);
+    const publicIp = json.public_ip.value as string;
+    const name     = json.instance_name.value as string;
+    console.log(chalk.green(`✓ EC2 prête : ${name} @ ${publicIp}`));
 
     return {
-      provider   : "aws",
-      publicIp   : ip,
-      sshUser    : "ec2-user",
-      sshKeyPath : this.cfg.provider.computePublicKeyPath
+      provider     : "aws",
+      publicIp     : publicIp,
+      sshUser      : "ec2-user",
+      sshKeyPath   : this.cfg.provider.computePublicKeyPath,
+      instanceName : name
     };
   }
 }

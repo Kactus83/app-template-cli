@@ -259,7 +259,7 @@ export async function deployCommand(): Promise<void> {
       console.log(chalk.magenta('           4) RUN CONTAINERS                 '));
       console.log(chalk.magenta('───────────────────────────────────────────────'));
       try {
-        await RunService.runContainers('prod');
+        await RunService.runContainers('prod', cliConfig, cd);
         console.log(chalk.green('✓ Tous les containers sont lancés.'));
       } catch (err: any) {
         console.error(chalk.red('✖ Erreur démarrage containers :'), err.message || err);
@@ -322,7 +322,7 @@ export async function deployCommand(): Promise<void> {
   console.log(chalk.magenta('           7) RUN CONTAINERS                 '));
   console.log(chalk.magenta('───────────────────────────────────────────────'));
   try {
-    await RunService.runContainers('prod');
+    await RunService.runContainers('prod', cliConfig, cd);
     console.log(chalk.green('✓ Tous les containers sont lancés.'));
   } catch (err: any) {
     console.error(chalk.red('✖ Erreur démarrage containers :'), err.message || err);

@@ -19,16 +19,15 @@ export class GoogleComputeService implements IComputeService {
     this.tfvarsPath = path.join(this.moduleDir, "terraform.tfvars.json");
   }
 
-  /** 1️⃣ Génération du tfvars pour la VM, en lisant l’IP du storage */
+  /** 1️⃣ Génération du tfvars pour la VM (toujours appelée) */
   async generateTerraformConfig(): Promise<void> {
-    // lit le storage.json pour récupérer filestoreIp
-    const infraDir     = path.join(process.cwd(), "prod-deployments", "infra", "google_cloud");
-    const storageJson  = await fs.readJson(path.join(infraDir, "storage.json")) as StorageInfraData;
+    const infraDir    = path.join(process.cwd(), "prod-deployments", "infra", "google_cloud");
+    const storageJson = await fs.readJson(path.join(infraDir, "storage.json")) as StorageInfraData;
     if (!storageJson.filestoreIp) {
       throw new Error("Impossible de lire filestoreIp depuis storage.json");
     }
 
-    const { projectName }               = this.cfg;
+    const { projectName }                       = this.cfg;
     const { region, zone, filestoreExportPath } = this.cfg.provider;
 
     const tfvars = {
@@ -37,7 +36,7 @@ export class GoogleComputeService implements IComputeService {
       zone                  : zone,
       filestore_ip          : storageJson.filestoreIp,
       filestore_export_path : filestoreExportPath,
-      // les autres variables (instance_name, machine_type…) sont dans variables.tf
+      // instance_name, machine_type, etc. dans variables.tf
     };
 
     await fs.ensureDir(this.moduleDir);
@@ -55,6 +54,7 @@ export class GoogleComputeService implements IComputeService {
         "compute", "instances", "describe", name,
         `--project=${this.cfg.projectName}`,
         `--zone=${zone}`,
+        "--quiet",
         "--format=json"
       ],
       { stdio: "ignore" }
@@ -67,30 +67,39 @@ export class GoogleComputeService implements IComputeService {
     return ok;
   }
 
-  /** 3️⃣ Provisionne la VM + récupère l'adresse publique */
+  /** 3️⃣ Provisionne la VM + récupère l’adresse publique et le nom */
   async deployAndFetchData(): Promise<ComputeInfraData> {
     console.log(chalk.yellow("▶ Provisionnement Google Compute VM…"));
-    // terraform init & apply
-    for (const args of [["init"], ["apply", "-auto-approve"]]) {
-      const res = spawnSync("terraform", args, { cwd: this.moduleDir, stdio: "inherit" });
-      if (res.status !== 0) {
-        throw new Error(`Terraform ${args[0]} a échoué`);
-      }
-    }
-    // lit le output Terraform
+    const cwd = this.moduleDir;
+
+    // ── Terraform init ── (non interactif)
+    let res = spawnSync("terraform", ["init", "-input=false"], { cwd, stdio: "inherit" });
+    if (res.status !== 0) throw new Error("Terraform init a échoué");
+
+    // ── Terraform apply ── (non interactif, var-file)
+    res = spawnSync("terraform", [
+      "apply",
+      "-auto-approve",
+      "-input=false",
+      `-var-file=${path.basename(this.tfvarsPath)}`
+    ], { cwd, stdio: "inherit" });
+    if (res.status !== 0) throw new Error("Terraform apply a échoué");
+
+    // ── Lire les outputs ──
     const out = spawnSync("terraform", ["output", "-json"], {
-      cwd: this.moduleDir,
-      stdio: ["ignore", "pipe", "inherit"]
+      cwd, stdio: ["ignore","pipe","inherit"]
     }).stdout!.toString();
-    const json = JSON.parse(out);
-    const ip   = json.public_ip.value as string;
-    console.log(chalk.green(`✓ VM prête à ${ip}`));
+    const json     = JSON.parse(out);
+    const publicIp = json.public_ip.value as string;
+    const name     = json.instance_name.value as string;
+    console.log(chalk.green(`✓ VM prête : ${name} @ ${publicIp}`));
 
     return {
-      provider   : "google",
-      publicIp   : ip,
-      sshUser    : "ubuntu",
-      sshKeyPath : path.join(process.env.HOME || "", ".ssh", "id_rsa")
+      provider     : "google",
+      publicIp     : publicIp,
+      sshUser      : "ubuntu",
+      sshKeyPath   : path.join(process.env.HOME || "", ".ssh", "id_rsa"),
+      instanceName : name
     };
   }
 }
