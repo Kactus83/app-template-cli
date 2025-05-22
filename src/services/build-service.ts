@@ -2,7 +2,6 @@ import { execSync, spawnSync } from 'child_process';
 import chalk from 'chalk';
 import { TemplateConfigService } from './template-config-service.js';
 import { DockerComposeService } from './docker-compose-service.js';
-import { AWSCliConfig, GoogleCliConfig } from '../config/cli-config.js';
 import prompts from 'prompts';
 import path from 'path';
 
@@ -38,7 +37,7 @@ export class BuildService {
   /**
    * Exécute le prébuild (si défini dans le template) puis le build des services en mode production.
    */
-  static async buildProd(cliConfig: GoogleCliConfig | AWSCliConfig): Promise<void> {
+  static async buildProd(cliConfig: any): Promise<void> {
     
   // Vérification et correction des noms d'images dans docker-compose.prod.yml
   const discrepancies = await DockerComposeService.checkImageNames('prod', cliConfig.provider.artifactRegistry);

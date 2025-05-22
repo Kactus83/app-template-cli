@@ -2,7 +2,6 @@ import fs from 'fs-extra';
 import path from 'path';
 import yaml from 'js-yaml';
 import { deduceDeploymentOrder } from '../utils/docker-compose-utils.js';
-import { Provider } from '../config/cli-config.js';
 
 export type Environment = 'dev' | 'prod';
 
@@ -158,103 +157,6 @@ export class DockerComposeService {
       console.log(`Fichier ${composeFileName} mis à jour avec les noms d'images conformes.`);
     } else {
       console.log(`Les noms d'images dans ${composeFileName} sont déjà conformes.`);
-    }
-  }
-
-  /**
-   * Retourne le driver attendu pour les volumes en fonction du provider.
-   * Par exemple, pour AWS on peut utiliser 'aws_efs' et pour Google Cloud 'gcp_filestore'.
-   */
-  static getExpectedVolumeDriver(provider: Provider): string {
-    switch (provider) {
-      case Provider.AWS:
-        return 'aws_efs'; // driver adapté pour AWS
-      case Provider.GOOGLE_CLOUD:
-        return 'gcp_filestore'; // driver adapté pour Google Cloud
-      default:
-        return 'local';
-    }
-  }
-
-  /**
-   * Vérifie les drivers des volumes dans le fichier docker-compose.(dev|prod).yml.
-   * Si le driver d'un volume est 'local' alors qu'un driver spécifique est attendu,
-   * un écart est signalé.
-   *
-   * @param env Environnement ('dev' ou 'prod').
-   * @param provider Le provider configuré.
-   * @returns Une liste d'objets décrivant les écarts (volumeName, currentDriver, expectedDriver).
-   */
-  static async checkVolumeDrivers(
-    env: Environment,
-    provider: Provider
-  ): Promise<{ volumeName: string; currentDriver: string; expectedDriver: string }[]> {
-    const composeFileName = DockerComposeService.getComposeFileName(env);
-    const composePath = path.join(process.cwd(), composeFileName);
-    if (!(await fs.pathExists(composePath))) {
-      throw new Error(`Fichier ${composeFileName} introuvable dans ${process.cwd()}`);
-    }
-    const composeContent = await fs.readFile(composePath, 'utf8');
-    const composeData: any = yaml.load(composeContent);
-    const discrepancies: { volumeName: string; currentDriver: string; expectedDriver: string }[] = [];
-    const expectedDriver = DockerComposeService.getExpectedVolumeDriver(provider);
-
-    if (!composeData.volumes) {
-      return discrepancies;
-    }
-
-    for (const volumeName in composeData.volumes) {
-      const volumeDef = composeData.volumes[volumeName];
-      const currentDriver: string = volumeDef.driver || 'local';
-      if (currentDriver === 'local' && expectedDriver !== 'local') {
-        discrepancies.push({ volumeName, currentDriver, expectedDriver });
-      }
-    }
-    return discrepancies;
-  }
-
-  /**
-   * Corrige les drivers des volumes dans le fichier docker-compose.(dev|prod).yml.
-   * Pour chaque volume dont le driver est 'local' alors qu'un driver spécifique est attendu,
-   * la configuration est mise à jour.
-   *
-   * @param env Environnement ('dev' ou 'prod').
-   * @param provider Le provider configuré.
-   */
-  static async correctVolumeDrivers(env: Environment, provider: Provider): Promise<void> {
-    const composeFileName = DockerComposeService.getComposeFileName(env);
-    const composePath = path.join(process.cwd(), composeFileName);
-    if (!(await fs.pathExists(composePath))) {
-      throw new Error(`Fichier ${composeFileName} introuvable dans ${process.cwd()}`);
-    }
-    const composeContent = await fs.readFile(composePath, 'utf8');
-    const composeData: any = yaml.load(composeContent);
-    let modified = false;
-    const expectedDriver = DockerComposeService.getExpectedVolumeDriver(provider);
-
-    if (!composeData.volumes) {
-      console.log(`Aucune section 'volumes' trouvée dans ${composeFileName}.`);
-      return;
-    }
-
-    for (const volumeName in composeData.volumes) {
-      const volumeDef = composeData.volumes[volumeName];
-      const currentDriver: string = volumeDef.driver || 'local';
-      if (currentDriver === 'local' && expectedDriver !== 'local') {
-        console.log(
-          `Volume ${volumeName} : driver actuel "${currentDriver}" -> attendu "${expectedDriver}"`
-        );
-        composeData.volumes[volumeName].driver = expectedDriver;
-        modified = true;
-      }
-    }
-
-    if (modified) {
-      const updatedContent = yaml.dump(composeData);
-      await fs.writeFile(composePath, updatedContent, 'utf8');
-      console.log(`Fichier ${composeFileName} mis à jour avec les drivers de volumes conformes.`);
-    } else {
-      console.log(`Les drivers de volumes dans ${composeFileName} sont déjà conformes.`);
     }
   }
 }

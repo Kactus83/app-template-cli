@@ -98,7 +98,7 @@ export async function buildCommand(): Promise<void> {
     let cliConfig;
 
     try {
-      cliConfig = await ConfigService.ensureOrPromptProviderConfig();
+      cliConfig = {};
       console.log(chalk.green('Configuration validée.'));
     } catch (error) {
       console.error(chalk.red('Erreur lors de la validation de la configuration:'), error);

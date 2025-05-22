@@ -14,6 +14,8 @@ import { credentialsCommand } from './commands/credentials.js';
 import { templateCommand } from './commands/template.js';
 import { deployCommand } from './commands/deploy.js';
 import { devRunCommand } from './commands/dev-run.js';
+import { log } from 'console';
+import { loginCommand } from './commands/login.js';
 
 
 const program = new Command();
@@ -22,6 +24,12 @@ program
   .name('appwizard')
   .description('🧙‍♂️ CLI pour gérer efficacement votre projet NestJS/Angular.')
   .version('0.0.1', '-v, --version', 'Affiche la version actuelle du CLI');
+
+// Commande "login"
+program
+  .command('login')
+  .description('🔑 Authentification et gestion des credentials utilisateur.')
+  .action(loginCommand);
 
 // Commande "create"
 program

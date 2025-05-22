@@ -1,110 +1,64 @@
-import fs from 'fs-extra';
-import * as path from 'path';
-import prompts from 'prompts';
-import { CliConfig } from '../config/cli-config.js';
-
 /**
- * Commande "config" interactive qui affiche et permet d'éditer la configuration du projet ligne par ligne.
- *
- * Le fichier de configuration est stocké dans ".app-template" dans le répertoire courant.
- * Chaque propriété de la configuration est traitée individuellement.
- *
- * @returns Promise<void>
+ * @module commands/config
+ * Commande `appwizard config` pour consulter et modifier
+ * les sections encapsulées de la configuration CLI.
  */
+
+import prompts from 'prompts';
+import { ConfigService } from '../services/config-service.js';
+
 export async function configCommand(): Promise<void> {
-  const configFileName = '.app-template';
-  const configPath = path.resolve(process.cwd(), configFileName);
+  const svc = new ConfigService();
+  const cfg = await svc.getConfig();
+  const eps = cfg.endpoints;
 
-  if (!fs.existsSync(configPath)) {
-    console.error(`Aucun fichier de configuration "${configFileName}" trouvé. Veuillez d'abord exécuter "appwizard create".`);
-    return;
+  console.log('\n⚙️  Configuration CLI actuelle :');
+  console.log(`   endpoints.backendUrl : ${eps.backendUrl}`);
+  console.log(`   endpoints.frontendUrl: ${eps.frontendUrl}\n`);
+
+  // 1) Choix de la section
+  const resp1 = (await prompts({
+    type: 'select',
+    name: 'section',
+    message: 'Quelle section souhaitez-vous modifier ?',
+    choices: [
+      { title: 'endpoints (URLs)',             value: 'endpoints' },
+      { title: 'Réinitialiser toute la config', value: 'reset'     },
+      { title: 'Quitter',                       value: 'exit'      },
+    ],
+    initial: 0,
+  })) as any;
+
+  const section = resp1.section as 'endpoints' | 'reset' | 'exit';
+
+  if (section === 'endpoints') {
+    // 2) Modifier les URLs
+    const resp2 = (await prompts([
+      {
+        type: 'text',
+        name: 'backendUrl',
+        message: 'Nouvelle URL backend :',
+        initial: eps.backendUrl,
+      },
+      {
+        type: 'text',
+        name: 'frontendUrl',
+        message: 'Nouvelle URL frontend :',
+        initial: eps.frontendUrl,
+      },
+    ])) as any;
+
+    const backendUrl  = resp2.backendUrl as string;
+    const frontendUrl = resp2.frontendUrl as string;
+    await svc.setEndpointsConfig({ backendUrl, frontendUrl });
+    console.log('✅ Endpoints mis à jour.');
   }
-
-  let config: CliConfig;
-  try {
-    const configContent = await fs.readFile(configPath, 'utf8');
-    config = JSON.parse(configContent) as CliConfig;
-  } catch (error) {
-    console.error("Erreur lors de la lecture de la configuration :", error);
-    return;
+  else if (section === 'reset') {
+    await svc.clear();
+    await svc.resetToDefault();
+    console.log('⚠️  Config réinitialisée aux valeurs par défaut.');
   }
-
-  console.log("Configuration actuelle :");
-  console.log(JSON.stringify(config, null, 2));
-
-  // Modifier projectName (string)
-  const projectNameResp = await prompts({
-    type: 'text',
-    name: 'projectName',
-    message: `Modifier "projectName" (actuel: ${config.projectName}) ? (laisser vide pour conserver la valeur)`,
-    initial: config.projectName,
-  });
-  if (projectNameResp.projectName && projectNameResp.projectName.trim() !== '') {
-    config.projectName = projectNameResp.projectName.trim();
-  }
-
-  // Modifier performTests (boolean) dans buildOptions
-  const performTestsResp = await prompts({
-    type: 'toggle',
-    name: 'performTests',
-    message: `Modifier "performTests" (actuel: ${config.buildOptions.performTests}) ?`,
-    initial: config.buildOptions.performTests,
-    active: 'true',
-    inactive: 'false'
-  });
-  config.buildOptions.performTests = performTestsResp.performTests;
-
-  // Modifier performLint (boolean) dans buildOptions
-  const performLintResp = await prompts({
-    type: 'toggle',
-    name: 'performLint',
-    message: `Modifier "performLint" (actuel: ${config.buildOptions.performLint}) ?`,
-    initial: config.buildOptions.performLint,
-    active: 'true',
-    inactive: 'false'
-  });
-  config.buildOptions.performLint = performLintResp.performLint;
-
-  // Modifier hotFrontend (boolean) dans buildOptions
-  const hotFrontendResp = await prompts({
-    type: 'toggle',
-    name: 'hotFrontend',
-    message: `Modifier "hotFrontend" (actuel: ${config.buildOptions.hotFrontend}) ?`,
-    initial: config.buildOptions.hotFrontend,
-    active: 'true',
-    inactive: 'false'
-  });
-  config.buildOptions.hotFrontend = hotFrontendResp.hotFrontend;
-
-  // Modifier openWindow (boolean) dans buildOptions
-  const openWindowResp = await prompts({
-    type: 'toggle',
-    name: 'openWindow',
-    message: `Modifier "openWindow" (actuel: ${config.buildOptions.openWindow}) ?`,
-    initial: config.buildOptions.openWindow,
-    active: 'true',
-    inactive: 'false'
-  });
-  config.buildOptions.openWindow = openWindowResp.openWindow;
-
-  console.log("Nouvelle configuration :");
-  console.log(JSON.stringify(config, null, 2));
-
-  const confirm = await prompts({
-    type: 'confirm',
-    name: 'ok',
-    message: 'Confirmez-vous ces modifications ?',
-    initial: true
-  });
-
-  if (confirm.ok) {
-    try {
-      await fs.writeFile(configPath, JSON.stringify(config, null, 2));
-      console.log("✅ Configuration mise à jour avec succès.");
-    } catch (error) {
-      console.error("Erreur lors de l'écriture de la configuration :", error);
-    }
-  } else {
-    console.log("Modifications annulées.");
+  else {
+    console.log('👋 À bientôt !');
   }
 }

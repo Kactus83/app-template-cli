@@ -3,7 +3,7 @@ import path from 'path';
 import yaml from 'js-yaml';
 import { DockerComposeService, Environment } from './docker-compose-service.js';
 import { TemplateConfigService } from './template-config-service.js';
-import { ServiceConfig, ExtendedServiceConfig } from '../config/template-config.js';
+import { ServiceConfig, ExtendedServiceConfig } from '../types/template-config.js';
 
 export class ServiceConfigManager {
   /**

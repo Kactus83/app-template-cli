@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import path from 'path';
 import yaml from 'js-yaml';
-import { TemplateConfig, defaultTemplateConfig } from '../config/template-config.js';
+import { TemplateConfig, defaultTemplateConfig } from '../types/template-config.js';
 
 export class TemplateConfigService {
   /**
