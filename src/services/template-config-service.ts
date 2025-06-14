@@ -4,51 +4,76 @@ import yaml from 'js-yaml';
 import { TemplateConfig, defaultTemplateConfig } from '../types/template-config.js';
 
 export class TemplateConfigService {
+  private static readonly CONTAINERS_DIR = path.join(process.cwd(), 'containers');
+  private static readonly TEMPLATE_FILE = path.join(TemplateConfigService.CONTAINERS_DIR, 'template.yaml');
+
   /**
-   * Charge le fichier template.yaml situé dans le dossier containers.
+   * Charge le fichier template.yaml.
+   * @throws si introuvable.
    */
   static async loadTemplateConfig(): Promise<TemplateConfig> {
-    const templatePath = path.join(process.cwd(), 'containers', 'template.yaml');
-    if (!(await fs.pathExists(templatePath))) {
-      throw new Error(`Fichier template.yaml introuvable dans ${path.join(process.cwd(), 'containers')}`);
+    if (!(await fs.pathExists(TemplateConfigService.TEMPLATE_FILE))) {
+      throw new Error(`Fichier template.yaml introuvable dans ${TemplateConfigService.CONTAINERS_DIR}`);
     }
-    const fileContents = await fs.readFile(templatePath, 'utf8');
-    const data = yaml.load(fileContents) as TemplateConfig;
-    return data;
+    const content = await fs.readFile(TemplateConfigService.TEMPLATE_FILE, 'utf8');
+    return yaml.load(content) as TemplateConfig;
   }
 
   /**
-   * Vérifie la configuration du fichier template.yaml.
-   * S'il n'existe pas ou est invalide, il est créé/réparé avec la configuration par défaut.
-   *
-   * @returns La configuration du template.
+   * Vérifie et répare (si besoin) la config template.yaml.
+   * Crée le dossier `containers` et le fichier s'ils n'existent pas,
+   * ou réécrit avec défauts si le contenu est invalide.
    */
   static async checkTemplateConfig(): Promise<TemplateConfig> {
-    const templatePath = path.join(process.cwd(), 'containers', 'template.yaml');
     let repaired = false;
     let config: TemplateConfig;
-    if (!(await fs.pathExists(templatePath))) {
-      console.warn(`⚠️  Fichier template.yaml non trouvé. Création avec la configuration par défaut.`);
+
+    // 1) S'assure que le dossier containers existe
+    await fs.ensureDir(TemplateConfigService.CONTAINERS_DIR);
+
+    // 2) Si le fichier n'existe pas, on écrit la config par défaut
+    if (!(await fs.pathExists(TemplateConfigService.TEMPLATE_FILE))) {
+      console.warn('⚠️  template.yaml non trouvé, création depuis defaultTemplateConfig.');
       config = defaultTemplateConfig;
-      await fs.writeFile(templatePath, yaml.dump(config));
+      await fs.writeFile(
+        TemplateConfigService.TEMPLATE_FILE,
+        yaml.dump(config),
+        'utf8'
+      );
       repaired = true;
     } else {
+      // 3) Sinon on tente de charger et de valider
       try {
-        const fileContents = await fs.readFile(templatePath, 'utf8');
-        config = yaml.load(fileContents) as TemplateConfig;
-        if (!config.name || !config.version || !config.description) {
-          throw new Error("Configuration incomplète.");
+        const content = await fs.readFile(TemplateConfigService.TEMPLATE_FILE, 'utf8');
+        config = yaml.load(content) as TemplateConfig;
+        // Vérification basique
+        const required = [
+          'name', 'version', 'description',
+          'prebuildDevCommand', 'prebuildProdCommand',
+          'buildDevCommand', 'buildProdCommand',
+          'runDevCommand', 'runProdCommand',
+        ] as const;
+        for (const key of required) {
+          if (!config[key] || typeof config[key] !== 'string') {
+            throw new Error(`Clé manquante ou invalide : ${key}`);
+          }
         }
-      } catch (error) {
-        console.warn(`⚠️  Erreur de lecture de template.yaml (${error}). Réparation avec la configuration par défaut.`);
+      } catch (err) {
+        console.warn(`⚠️  Erreur de lecture/validation de template.yaml (${err}). Réparation.`);
         config = defaultTemplateConfig;
-        await fs.writeFile(templatePath, yaml.dump(config));
+        await fs.writeFile(
+          TemplateConfigService.TEMPLATE_FILE,
+          yaml.dump(config),
+          'utf8'
+        );
         repaired = true;
       }
     }
+
     if (repaired) {
-      console.warn("⚠️  La configuration du template a été réparée. Veuillez vérifier son contenu.");
+      console.warn('⚠️  La configuration du template a été réparée. Veuillez vérifier containers/template.yaml.');
     }
+
     return config;
   }
 }
