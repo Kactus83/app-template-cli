@@ -1,14 +1,22 @@
+/**
+ * @module services/auth-service
+ * Gère la persistance du Service Account et la récupération / cache
+ * du token d’accès auprès du backend.
+ */
+
 import fs from 'fs-extra';
 import * as path from 'path';
 import os from 'os';
 import { mkdirp } from 'mkdirp';
 import axios from 'axios';
 import { ConfigService } from './config-service.js';
-import type { EndpointsConfig } from '../types/cli-config.js';
+import type { EndpointsConfig, VersionConfig } from '../types/cli-config.js';
 import type { ServiceAccount, StoredServiceAccount } from '../types/auth.js';
 
-const STORAGE_DIR = path.join(os.homedir(), '.appwizard');
-const STORAGE_FILE = path.join(STORAGE_DIR, 'service-account.json');
+const STORAGE_DIR     = path.join(os.homedir(), '.appwizard');
+const STORAGE_FILE    = path.join(STORAGE_DIR, 'service-account.json');
+// default TTL if backend doesn't return expires_in
+const DEFAULT_TTL_SEC = 900;
 
 export class AuthService {
   private data!: StoredServiceAccount;
@@ -18,7 +26,7 @@ export class AuthService {
   private async load(): Promise<void> {
     await mkdirp(STORAGE_DIR);
     if (await fs.pathExists(STORAGE_FILE)) {
-      this.data = (await fs.readJSON(STORAGE_FILE)) as StoredServiceAccount;
+      this.data = await fs.readJSON(STORAGE_FILE) as StoredServiceAccount;
     } else {
       this.data = {} as StoredServiceAccount;
     }
@@ -51,7 +59,7 @@ export class AuthService {
     await this.load();
     if (this.data.clientId && this.data.clientSecret) {
       return {
-        clientId: this.data.clientId,
+        clientId:     this.data.clientId,
         clientSecret: this.data.clientSecret,
       };
     }
@@ -77,27 +85,33 @@ export class AuthService {
       return this.data.accessToken;
     }
 
-    // On récupère les endpoints depuis la config
-    const endpoints = (await this.config.getConfig()).endpoints as EndpointsConfig;
-    const tokenUrl  = `${endpoints.backendUrl}/auth/services-accounts/token`;
-
-    // Vérifications préalables
-    if (!this.data.clientId || !this.data.clientSecret) {
-      throw new Error('Aucun Service Account configuré. Lancez `appwizard login` d’abord.');
-    }
+    // Récupère endpoints & version depuis la config
+    const { endpoints, version } = await this.config.getConfig();
+    const tokenUrl = `${endpoints.backendUrl}/auth/services-accounts/token`;
 
     console.log(`🔑 Demande d’un nouveau token à : ${tokenUrl}`);
-    const resp = await axios.post(tokenUrl, {
-      clientId: this.data.clientId,
-      clientSecret: this.data.clientSecret,
-    });
+    const resp = await axios.post(
+      tokenUrl,
+      {
+        clientId:     this.data.clientId,
+        clientSecret: this.data.clientSecret,
+      },
+      {
+        headers: {
+          'x-frontend-version': version.frontend,
+        }
+      }
+    );
 
     // Debug : vérifier la forme de la réponse
     console.log('🎁 Réponse token du backend :', resp.data);
 
-    // Extraction correcte
-    const accessToken = (resp.data as any).access_token as string|undefined;
-    const expiresIn   = (resp.data as any).expires_in   as number|undefined;
+    const body = resp.data as any;
+    const accessToken = body.access_token ?? body.token;
+    const expiresIn   =
+      typeof body.expires_in === 'number'
+        ? body.expires_in
+        : DEFAULT_TTL_SEC;
 
     if (!accessToken || typeof expiresIn !== 'number') {
       throw new Error(`Réponse de token invalide : ${JSON.stringify(resp.data)}`);
